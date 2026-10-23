@@ -2,10 +2,11 @@
 FEL := external/Felucca
 GEN := $(FEL)/build/gen
 # as native_check (the Global Constraints): the firmware compiled unmodified
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore
+SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
 CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
 
-.PHONY: gen core test test-identical test-core test-loader
+.PHONY: gen core test test-identical test-core test-loader test-engine
 gen: $(GEN)
 $(GEN):
 	cd $(FEL) && python3 tools/build.py --gen-only
@@ -15,7 +16,7 @@ build/libghoulbox_core.so: core/ghoulbox_core.c core/ghoulbox_core.h | $(GEN)
 	@mkdir -p build
 	cc $(CORE_CFLAGS) -shared -fvisibility=hidden -o $@ $< -lm
 
-test: test-identical test-core test-loader
+test: test-identical test-core test-loader test-engine
 
 test-identical: core
 	sh tests/identical_test.sh
@@ -33,3 +34,14 @@ build/loader_test: tests/loader_test.cpp host/core_loader.cpp host/core_loader.h
 
 test-loader: build/loader_test core
 	build/loader_test
+
+build/resample.o: external/speex/resample.c
+	@mkdir -p build
+	cc -O2 -fPIC -w $(SPEEX_DEFS) -Iexternal/speex -c -o $@ $<
+
+ENGINE_SRC := host/engine.cpp host/core_loader.cpp
+build/engine_test: tests/engine_test.cpp $(ENGINE_SRC) host/engine.h host/core_loader.h build/resample.o
+	c++ $(CXXFLAGS) -o $@ tests/engine_test.cpp $(ENGINE_SRC) build/resample.o -ldl
+
+test-engine: build/engine_test core
+	build/engine_test
