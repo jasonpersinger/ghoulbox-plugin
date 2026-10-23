@@ -13,3 +13,4 @@ Design: `~/projects/ghoulbox-plugin-design/2026-10-22-ghoulbox-plugin-design.md`
     make gen     # the firmware's generated headers (python3 tools/build.py --gen-only)
     make core    # build/libghoulbox_core.so
     make test
+    make install # CLAP, VST3, LV2 into ~/.clap ~/.vst3 ~/.lv2

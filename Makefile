@@ -6,7 +6,7 @@ SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
 CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
 
-.PHONY: gen core test test-identical test-core test-loader test-engine test-clock test-library
+.PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-plugin
 gen: $(GEN)
 $(GEN):
 	cd $(FEL) && python3 tools/build.py --gen-only
@@ -16,7 +16,7 @@ build/libghoulbox_core.so: core/ghoulbox_core.c core/ghoulbox_core.h | $(GEN)
 	@mkdir -p build
 	cc $(CORE_CFLAGS) -shared -fvisibility=hidden -o $@ $< -lm
 
-test: test-identical test-core test-loader test-engine test-clock test-library
+test: test-identical test-core test-loader test-engine test-clock test-library test-plugin
 
 test-identical: core
 	sh tests/identical_test.sh
@@ -59,3 +59,23 @@ build/library_test: tests/library_test.cpp host/library.cpp host/library.h
 
 test-library: build/library_test
 	build/library_test
+
+plugin: core build/resample.o
+	$(MAKE) -C plugin
+	for d in build/plugin build/plugin/ghoulbox.vst3/Contents/x86_64-linux build/plugin/ghoulbox.lv2; do \
+		cp build/libghoulbox_core.so $$d/ || exit 1; done
+
+build/clap_host_test: tests/clap_host_test.cpp
+	@mkdir -p build
+	c++ $(CXXFLAGS) -Iexternal/DPF/distrho/src -o $@ $< -ldl -lpthread
+
+test-plugin: plugin build/clap_host_test
+	sh tests/plugin_smoke.sh
+	build/clap_host_test
+
+# the user's sudo-free plugin folders (the CLAP's core goes beside it in ~/.clap)
+install: plugin
+	cp build/plugin/ghoulbox.clap build/plugin/libghoulbox_core.so ~/.clap/
+	rm -rf ~/.vst3/ghoulbox.vst3 ~/.lv2/ghoulbox.lv2
+	cp -r build/plugin/ghoulbox.vst3 ~/.vst3/
+	cp -r build/plugin/ghoulbox.lv2 ~/.lv2/
