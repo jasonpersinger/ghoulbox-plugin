@@ -127,6 +127,27 @@ static void test_clock_follows(void)
     CHECK(gb_playing() == 0);
 }
 
+/* the autosave (a change, then 10 s quiet) writes the flash only inside gb_nor_private's span */
+static uint8_t before[0x100000];
+static void test_autosave_within_private(void)
+{
+    uint32_t off = 0, len = 0, i, changed = 0;
+    fresh();
+    peak(MS(100));
+    memcpy(before, gb_nor(), gb_nor_size());
+    gb_track_cc(0, 23, 77);
+    for (i = 0; i < 15; i++)                        /* (peak's buffer holds ~5 s) */
+        peak(MS(1000));
+    gb_nor_private(&off, &len);
+    CHECK(len > 0 && off + len <= gb_nor_size());
+    for (i = 0; i < gb_nor_size(); i++)
+        if (gb_nor()[i] != before[i]) {
+            changed++;
+            CHECK(i >= off && i < off + len);
+        }
+    CHECK(changed > 0);
+}
+
 static int run(const char *name, void (*fn)(void))
 {
     int st;
@@ -154,6 +175,7 @@ int main(void)
     f += run("test_state_rejects_garbage", test_state_rejects_garbage);
     f += run("test_track_cc", test_track_cc);
     f += run("test_clock_follows", test_clock_follows);
+    f += run("test_autosave_within_private", test_autosave_within_private);
     printf(f ? "FAIL: %d\n" : "PASS: all\n", f);
     return f != 0;
 }

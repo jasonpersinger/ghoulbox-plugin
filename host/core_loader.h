@@ -12,6 +12,7 @@
     X(nor, const uint8_t*, (void))                                        \
     X(nor_size, uint32_t, (void))                                         \
     X(flash_writes, uint32_t, (void))                                     \
+    X(nor_private, void, (uint32_t*, uint32_t*))                          \
     X(boot, void, (void))                                                 \
     X(render, void, (float*, float*, uint32_t))                           \
     X(midi, uint32_t, (uint8_t, uint8_t, uint8_t))                        \

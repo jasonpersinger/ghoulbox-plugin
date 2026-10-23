@@ -43,7 +43,10 @@ public:
         }
         const GbApi& api = core->api();
         base_ = library_.load(api.nor_size());
-        api.nor_load(base_.data(), (uint32_t)base_.size());
+        api.nor_private(&privOff_, &privLen_);
+        std::vector<uint8_t> img = base_;              // the library, without anyone's autosave: this instance's
+        std::fill(img.begin() + privOff_, img.begin() + privOff_ + privLen_, 0xFF);   // music is its own
+        api.nor_load(img.data(), (uint32_t)img.size());
         api.boot();
         snap_.resize(base_.size());
         engine_.reset(new Engine(std::move(core), getSampleRate()));
@@ -232,6 +235,7 @@ private:
             img = snap_;
             snapDirty_ = false;
         }
+        std::copy(img.begin() + privOff_, img.begin() + privOff_ + privLen_, base_.begin() + privOff_);   // (never shared)
         if (library_.commit(base_, img))
             base_ = std::move(img);
         else {
@@ -265,6 +269,7 @@ private:
     std::condition_variable wake_;
     bool snapDirty_ = false, stop_ = false;
     uint32_t writes_ = 0;                               // (0: whatever boot wrote is committed too)
+    uint32_t privOff_ = 0, privLen_ = 0;                // gb_nor_private: kept out of the library
     std::thread worker_;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhoulboxPlugin)

@@ -204,6 +204,39 @@ static void test_library_written()
     CHECK(written);
 }
 
+/* the firmware's autosave is the instance's own current music (the DAW project keeps it): another instance's must
+ * never become a new instance's music through the shared library */
+static void test_autosave_stays_private()
+{
+    std::string keep = std::getenv("XDG_DATA_HOME"), own = keep + "/autosave";
+    setenv("XDG_DATA_HOME", own.c_str(), 1);
+    std::string def;
+    {
+        Inst fresh;
+        CHECK(fresh.p);
+        fresh.runFor(0.1);
+        def = project(fresh.save());
+        CHECK(!def.empty());
+    }
+    {
+        Inst a;
+        CHECK(a.p);
+        const uint8_t cc[3] = {0xB0, 23, 77};
+        a.runFor(0.2, cc);
+        a.runFor(15);                                 /* autosaved: a change, then 10 s quiet */
+        CHECK(project(a.save()) != def);
+    }                                                 /* (destroyed: its flash committed) */
+    struct stat st;
+    CHECK(stat((own + "/GHOULBOX/library.nor").c_str(), &st) == 0);
+    {
+        Inst b;
+        CHECK(b.p);
+        b.runFor(0.1);
+        CHECK(project(b.save()) == def);              /* a new instance: the default music, not A's */
+    }
+    setenv("XDG_DATA_HOME", keep.c_str(), 1);
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -244,6 +277,7 @@ int main()
         {"test_state_roundtrip", test_state_roundtrip},
         {"test_state_rejects_garbage", test_state_rejects_garbage},
         {"test_library_written", test_library_written},
+        {"test_autosave_stays_private", test_autosave_stays_private},
         {"test_no_temp_leftovers", test_no_temp_leftovers},
     };
     for (auto& x : t) {

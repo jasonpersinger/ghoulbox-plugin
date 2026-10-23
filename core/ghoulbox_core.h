@@ -18,6 +18,8 @@ GB_API void gb_nor_load(const uint8_t *img, uint32_t n);
 GB_API const uint8_t *gb_nor(void);
 GB_API uint32_t gb_nor_size(void);
 GB_API uint32_t gb_flash_writes(void);
+GB_API void gb_nor_private(uint32_t *off, uint32_t *len);   /* the instance's own flash, never shared: the autosave
+                                                             * (its current music, which the host's project keeps) */
 #define GB_BOOT_MS 4000u
 GB_API void gb_boot(void);           /* power on, then render-and-discard to GB_BOOT_MS: past the splash and the intro */
 GB_API uint32_t gb_midi(uint8_t status, uint8_t d1, uint8_t d2);   /* channel messages; F8 FA FB FC as USB clock;

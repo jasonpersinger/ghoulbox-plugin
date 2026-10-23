@@ -30,6 +30,11 @@ void gb_nor_load(const uint8_t *img, uint32_t n)
 const uint8_t *gb_nor(void) { return nor; }
 uint32_t gb_nor_size(void) { return sizeof nor; }
 uint32_t gb_flash_writes(void) { return web_flash_writes_count(); }
+void gb_nor_private(uint32_t *off, uint32_t *len)       /* storage.c: the autosave's A / B sectors, side by side */
+{
+    *off = st_sector(OBJ_AUTOSAVE, 0);
+    *len = st_sector(OBJ_AUTOSAVE, 1) + ST_SECTOR - *off;
+}
 
 void gb_boot(void)
 {
