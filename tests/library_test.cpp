@@ -29,6 +29,8 @@ static std::vector<uint8_t> readFile(const std::string& p)
 }
 static bool sectorIs(const std::vector<uint8_t>& img, uint32_t s, uint8_t v)
 {
+    if (img.size() < (s + 1) * SECTOR)
+        return false;
     for (uint32_t i = 0; i < SECTOR; i++)
         if (img[s * SECTOR + i] != v)
             return false;
@@ -124,6 +126,32 @@ static void test_commit_rejects_mismatched_sizes()
     CHECK(!lib.commit(erased(), std::vector<uint8_t>(SIZE - 1, 0)));
 }
 
+/* an unreadable library (EACCES here; EMFILE / EIO alike): never treated as missing or as the wrong size */
+static void test_unreadable_commit_fails_and_keeps_file()
+{
+    std::string p = fresh("unreadable");
+    Library lib(p);
+    CHECK(lib.commit(erased(), withSector(erased(), 7, 1)));
+    chmod(p.c_str(), 0);
+    bool ok = lib.commit(erased(), withSector(erased(), 8, 2));
+    chmod(p.c_str(), 0644);
+    CHECK(!ok);                                     /* fails: the worker retries later */
+    auto img = lib.load(SIZE);
+    CHECK(sectorIs(img, 7, 1));                     /* the other instance's save survives */
+}
+
+static void test_unreadable_load_leaves_file()
+{
+    std::string p = fresh("unreadable2");
+    Library lib(p);
+    CHECK(lib.commit(erased(), withSector(erased(), 7, 1)));
+    chmod(p.c_str(), 0);
+    auto img = lib.load(SIZE);
+    chmod(p.c_str(), 0644);
+    CHECK(img == erased());                         /* boots erased this time, */
+    CHECK(sectorIs(readFile(p), 7, 1));             /* the library left where it was */
+}
+
 int main()
 {
     char tmpl[] = "build/libtest-XXXXXX";
@@ -138,6 +166,8 @@ int main()
         {"test_concurrent_commits_keep_both", test_concurrent_commits_keep_both},
         {"test_same_sector_last_wins", test_same_sector_last_wins},
         {"test_commit_rejects_mismatched_sizes", test_commit_rejects_mismatched_sizes},
+        {"test_unreadable_commit_fails_and_keeps_file", test_unreadable_commit_fails_and_keeps_file},
+        {"test_unreadable_load_leaves_file", test_unreadable_load_leaves_file},
     };
     for (auto& x : t) {
         int f = fails;

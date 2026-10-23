@@ -24,19 +24,22 @@ static void makeDirs(const std::string& file)
         mkdir(file.substr(0, i).c_str(), 0755);
 }
 
-/* the whole file if it is exactly `size` bytes; -1 missing, -2 another size or unreadable */
+enum { IMG_OK = 0, IMG_MISSING = -1, IMG_BAD_SIZE = -2, IMG_UNREADABLE = -3 };
+
+/* the whole file if it is exactly `size` bytes. IMG_UNREADABLE (EACCES, EMFILE, EIO...) is never taken for missing or
+ * for the wrong size: either would overwrite or move away a library that is fine */
 static int readImage(const std::string& path, uint32_t size, std::vector<uint8_t>& img)
 {
     int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd < 0)
-        return errno == ENOENT ? -1 : -2;
+        return errno == ENOENT ? IMG_MISSING : IMG_UNREADABLE;
     struct stat st;
-    int rc = fstat(fd, &st) == 0 && st.st_size == (off_t)size ? 0 : -2;
+    int rc = fstat(fd, &st) != 0 ? IMG_UNREADABLE : st.st_size != (off_t)size ? IMG_BAD_SIZE : IMG_OK;
     img.assign(size, 0xFF);
-    for (uint32_t got = 0; rc == 0 && got < size;) {
+    for (uint32_t got = 0; rc == IMG_OK && got < size;) {
         ssize_t n = read(fd, img.data() + got, size - got);
         if (n <= 0)
-            rc = -2;
+            rc = IMG_UNREADABLE;
         else
             got += (uint32_t)n;
     }
@@ -48,10 +51,10 @@ std::vector<uint8_t> Library::load(uint32_t size)
 {
     std::vector<uint8_t> img;
     int rc = readImage(path_, size, img);
-    if (rc == -2)
+    if (rc == IMG_BAD_SIZE)
         rename(path_.c_str(), (path_ + ".bad-" + std::to_string((long long)std::time(nullptr))).c_str());
-    if (rc != 0)
-        img.assign(size, 0xFF);
+    if (rc != IMG_OK)
+        img.assign(size, 0xFF);                     // (unreadable: erased this time, the file left alone)
     return img;
 }
 
@@ -77,8 +80,13 @@ bool Library::commit(const std::vector<uint8_t>& base, const std::vector<uint8_t
         return false;
     bool ok = flock(lock, LOCK_EX) == 0;
     std::vector<uint8_t> img;
-    if (ok && readImage(path_, (uint32_t)current.size(), img) != 0)
-        img.assign(current.size(), 0xFF);                     // (none yet: the erased flash)
+    if (ok) {
+        int rc = readImage(path_, (uint32_t)current.size(), img);
+        if (rc == IMG_MISSING || rc == IMG_BAD_SIZE)
+            img.assign(current.size(), 0xFF);                 // (none yet, or load() moved a bad one aside: erased)
+        else
+            ok = rc == IMG_OK;                                // unreadable: fail, the worker retries
+    }
     for (size_t s = 0; ok && s < current.size(); s += SECTOR) {
         size_t n = std::min<size_t>(SECTOR, current.size() - s);
         if (std::equal(current.begin() + s, current.begin() + s + n, base.begin() + s))
