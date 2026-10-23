@@ -41,9 +41,9 @@ static const clap_output_events_t outEvents = {nullptr, pushNop};
 struct Inst {
     const clap_plugin_t* p = nullptr;
     uint64_t t = 0;
-    Inst()
+    explicit Inst(const clap_plugin_factory_t* f = factory)
     {
-        p = factory->create_plugin(factory, &host, "quest.messy.ghoulbox");
+        p = f->create_plugin(f, &host, "quest.messy.ghoulbox");
         if (p && p->init(p) && p->activate(p, RATE, 1, 4096) && p->start_processing(p))
             return;
         p = nullptr;
@@ -237,6 +237,39 @@ static void test_autosave_stays_private()
     setenv("XDG_DATA_HOME", keep.c_str(), 1);
 }
 
+/* the plugin without its core (a bad install): silent, and the project's music is kept, never saved over */
+static const clap_plugin_factory_t* noCoreFactory()
+{
+    static const clap_plugin_factory_t* f;
+    if (f)
+        return f;
+    std::string dir = std::string(std::getenv("XDG_DATA_HOME")) + "/nocore", bin = dir + "/ghoulbox.clap";
+    mkdir(dir.c_str(), 0755);
+    if (std::system(("cp " + std::string(PATH) + " " + bin).c_str()) != 0)
+        return nullptr;
+    void* so = dlopen(bin.c_str(), RTLD_NOW | RTLD_LOCAL);
+    auto* e = so ? (const clap_plugin_entry_t*)dlsym(so, "clap_entry") : nullptr;
+    if (e && e->init(bin.c_str()))
+        f = (const clap_plugin_factory_t*)e->get_factory(CLAP_PLUGIN_FACTORY_ID);
+    return f;
+}
+static void test_missing_core_keeps_state()
+{
+    Inst a;
+    CHECK(a.p);
+    const uint8_t cc[3] = {0xB0, 21, 9};
+    a.runFor(0.2, cc);
+    std::string s = a.save();
+    CHECK(!project(s).empty());
+    auto* f = noCoreFactory();
+    CHECK(f);
+    Inst n(f);
+    CHECK(n.p);
+    CHECK(n.runFor(0.2, NOTE_ON) == 0.f);             /* silent, no crash */
+    CHECK(n.load(s));
+    CHECK(project(n.save()) == project(s));           /* what it was given, given back */
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -278,6 +311,7 @@ int main()
         {"test_state_rejects_garbage", test_state_rejects_garbage},
         {"test_library_written", test_library_written},
         {"test_autosave_stays_private", test_autosave_stays_private},
+        {"test_missing_core_keeps_state", test_missing_core_keeps_state},
         {"test_no_temp_leftovers", test_no_temp_leftovers},
     };
     for (auto& x : t) {

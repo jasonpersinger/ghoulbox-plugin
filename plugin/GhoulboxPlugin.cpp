@@ -116,8 +116,10 @@ protected:
     }
     String getState(const char* key) const override
     {
-        if (!engine_ || std::strcmp(key, "project") != 0)
+        if (std::strcmp(key, "project") != 0)
             return String();
+        if (!engine_)
+            return heldState_;                          // (no core: the project's music, kept as it came)
         std::vector<uint8_t> b(api().state_size());
         uint32_t n;
         {
@@ -128,8 +130,12 @@ protected:
     }
     void setState(const char* key, const char* value) override
     {
-        if (!engine_ || std::strcmp(key, "project") != 0 || !*value)
+        if (std::strcmp(key, "project") != 0 || !*value)
             return;
+        if (!engine_) {
+            heldState_ = value;                         // never saved over with nothing
+            return;
+        }
         std::vector<uint8_t> b = d_getChunkFromBase64String(value);
         std::lock_guard<std::mutex> g(coreMutex_);
         if (!b.empty() && api().state_load(b.data(), (uint32_t)b.size()))
@@ -256,6 +262,7 @@ private:
     }
 
     std::unique_ptr<Engine> engine_;
+    String heldState_;                                  // the project's state, while there is no core to hold it
     mutable std::mutex coreMutex_;
     ClockGen clock_;
     const bool beatsAreQuarters_ = std::strcmp(getPluginFormatName(), "CLAP") == 0;   // (DPF's CLAP BBT: quarters)
