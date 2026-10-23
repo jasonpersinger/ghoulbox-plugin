@@ -8,6 +8,12 @@
 
 struct HostTime { bool playing; double ppqPos; double bpm; };   // at the block's first frame
 
+/* the host's bar / beat / tick as quarter notes from the song's start. beatsAreQuarters: the host's beat already is a
+ * quarter note (DPF's CLAP wrapper splits song_pos_beats, in quarters, by the numerator alone); else a beat is a
+ * 1/beatType note (DPF's VST3 wrapper) */
+double quartersFromBbt(double barStartTick, int beat, double tick, double ticksPerBeat, double beatType,
+                       bool beatsAreQuarters);
+
 class ClockGen {
 public:
     void reset() { playing_ = false; }

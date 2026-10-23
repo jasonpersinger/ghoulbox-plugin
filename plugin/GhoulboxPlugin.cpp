@@ -187,8 +187,9 @@ private:
         if (!tp.bbt.valid)                              // (no BBT from the host: frames at 120 BPM)
             return HostTime{tp.playing, tp.frame / getSampleRate() * 2.0, 120.0};
         const auto& b = tp.bbt;
-        const double beats = b.barStartTick / b.ticksPerBeat + (b.beat - 1) + b.tick / b.ticksPerBeat;
-        return HostTime{tp.playing, beats * 4.0 / b.beatType, b.beatsPerMinute};
+        return HostTime{tp.playing,
+                        quartersFromBbt(b.barStartTick, b.beat, b.tick, b.ticksPerBeat, b.beatType, beatsAreQuarters_),
+                        b.beatsPerMinute};
     }
 
     /* the host's MIDI and the clock, by frame (the clock first on a tie); no allocation */
@@ -253,6 +254,7 @@ private:
     std::unique_ptr<Engine> engine_;
     mutable std::mutex coreMutex_;
     ClockGen clock_;
+    const bool beatsAreQuarters_ = std::strcmp(getPluginFormatName(), "CLAP") == 0;   // (DPF's CLAP BBT: quarters)
     std::vector<MidiEv> events_, clockEvents_;
     std::atomic<float> param_[kParamCount];
     std::atomic<uint64_t> dirty_{0};

@@ -105,6 +105,23 @@ static void test_tempo_change()
         CHECK(std::fabs(b[k] - b[k - 1] - 48000.0 * 60 / 90 / 24) <= 1);
 }
 
+/* 3 quarter notes into a 6/8 song, as DPF's wrappers lay it out (ticksPerBeat 1920) */
+static void test_quarters_clap_6_8()
+{
+    /* CLAP: song_pos_beats (quarters) split by the numerator alone: bar 1, beat 4 (a quarter each) */
+    CHECK(std::fabs(quartersFromBbt(0, 4, 0, 1920, 8, true) - 3.0) < 1e-9);
+}
+static void test_quarters_vst3_6_8()
+{
+    /* VST3: beats of the denominator (eighths): bar 2, beat 1, the bar starting 6 eighths in */
+    CHECK(std::fabs(quartersFromBbt(1920.0 * 6, 1, 0, 1920, 8, false) - 3.0) < 1e-9);
+}
+static void test_quarters_4_4_same_either_way()
+{
+    CHECK(std::fabs(quartersFromBbt(1920.0 * 4, 3, 960, 1920, 4, true) - 6.5) < 1e-9);
+    CHECK(std::fabs(quartersFromBbt(1920.0 * 4, 3, 960, 1920, 4, false) - 6.5) < 1e-9);
+}
+
 int main()
 {
     struct { const char* name; void (*fn)(); } t[] = {
@@ -113,6 +130,9 @@ int main()
         {"test_loop_jump_restarts", test_loop_jump_restarts},
         {"test_small_drift_no_restart", test_small_drift_no_restart},
         {"test_tempo_change", test_tempo_change},
+        {"test_quarters_clap_6_8", test_quarters_clap_6_8},
+        {"test_quarters_vst3_6_8", test_quarters_vst3_6_8},
+        {"test_quarters_4_4_same_either_way", test_quarters_4_4_same_either_way},
     };
     for (auto& x : t) {
         int f = fails;

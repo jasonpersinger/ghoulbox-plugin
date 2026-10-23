@@ -30,3 +30,10 @@ void ClockGen::block(const HostTime& t, uint32_t frames, double rate, std::vecto
     }
     expect_ = t.ppqPos + frames * ppqPerFrame;
 }
+
+double quartersFromBbt(double barStartTick, int beat, double tick, double ticksPerBeat, double beatType,
+                       bool beatsAreQuarters)
+{
+    const double beats = barStartTick / ticksPerBeat + (beat - 1) + tick / ticksPerBeat;
+    return beatsAreQuarters ? beats : beats * 4.0 / beatType;
+}
