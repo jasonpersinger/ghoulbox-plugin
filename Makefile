@@ -6,7 +6,7 @@ SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
 CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
 
-.PHONY: gen core test test-identical test-core test-loader test-engine
+.PHONY: gen core test test-identical test-core test-loader test-engine test-clock
 gen: $(GEN)
 $(GEN):
 	cd $(FEL) && python3 tools/build.py --gen-only
@@ -16,7 +16,7 @@ build/libghoulbox_core.so: core/ghoulbox_core.c core/ghoulbox_core.h | $(GEN)
 	@mkdir -p build
 	cc $(CORE_CFLAGS) -shared -fvisibility=hidden -o $@ $< -lm
 
-test: test-identical test-core test-loader test-engine
+test: test-identical test-core test-loader test-engine test-clock
 
 test-identical: core
 	sh tests/identical_test.sh
@@ -45,3 +45,10 @@ build/engine_test: tests/engine_test.cpp $(ENGINE_SRC) host/engine.h host/core_l
 
 test-engine: build/engine_test core
 	build/engine_test
+
+build/clock_test: tests/clock_test.cpp host/clock_gen.cpp host/clock_gen.h host/engine.h
+	@mkdir -p build
+	c++ $(CXXFLAGS) -o $@ tests/clock_test.cpp host/clock_gen.cpp
+
+test-clock: build/clock_test
+	build/clock_test
