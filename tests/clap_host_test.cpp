@@ -6,6 +6,7 @@
 #include "clap/host.h"
 #include "clap/plugin-factory.h"
 #include <chrono>
+#include "private_runtime_dir.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -225,6 +226,7 @@ static void test_no_temp_leftovers()
 
 int main()
 {
+    PrivateRuntimeDir rt;
     char tmpl[] = "build/plugtest-XXXXXX";
     if (!mkdtemp(tmpl))
         return 2;

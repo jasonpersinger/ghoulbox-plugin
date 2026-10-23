@@ -2,6 +2,7 @@
 /* Task 4: the engine: events at their host frame, the core's 44.1 kHz at the host's rate. */
 #include "../host/engine.h"
 #include "speex_resampler.h"
+#include "private_runtime_dir.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -123,6 +124,7 @@ static void test_event_position()
 
 int main()
 {
+    PrivateRuntimeDir rt;
     struct { const char* name; void (*fn)(); } t[] = {
         {"test_44k_bitexact", test_44k_bitexact},
         {"test_rates_and_blocks", test_rates_and_blocks},

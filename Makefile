@@ -28,7 +28,7 @@ build/core_api_test: tests/core_api_test.c core/ghoulbox_core.c core/ghoulbox_co
 test-core: build/core_api_test
 	build/core_api_test
 
-build/loader_test: tests/loader_test.cpp host/core_loader.cpp host/core_loader.h core/ghoulbox_core.h
+build/loader_test: tests/loader_test.cpp tests/private_runtime_dir.h host/core_loader.cpp host/core_loader.h core/ghoulbox_core.h
 	@mkdir -p build
 	c++ $(CXXFLAGS) -o $@ tests/loader_test.cpp host/core_loader.cpp -ldl
 
@@ -40,7 +40,7 @@ build/resample.o: external/speex/resample.c
 	cc -O2 -fPIC -w $(SPEEX_DEFS) -Iexternal/speex -c -o $@ $<
 
 ENGINE_SRC := host/engine.cpp host/core_loader.cpp
-build/engine_test: tests/engine_test.cpp $(ENGINE_SRC) host/engine.h host/core_loader.h build/resample.o
+build/engine_test: tests/engine_test.cpp tests/private_runtime_dir.h $(ENGINE_SRC) host/engine.h host/core_loader.h build/resample.o
 	c++ $(CXXFLAGS) -o $@ tests/engine_test.cpp $(ENGINE_SRC) build/resample.o -ldl
 
 test-engine: build/engine_test core
@@ -65,7 +65,7 @@ plugin: core build/resample.o
 	for d in build/plugin build/plugin/ghoulbox.vst3/Contents/x86_64-linux build/plugin/ghoulbox.lv2; do \
 		cp build/libghoulbox_core.so $$d/ || exit 1; done
 
-build/clap_host_test: tests/clap_host_test.cpp
+build/clap_host_test: tests/clap_host_test.cpp tests/private_runtime_dir.h
 	@mkdir -p build
 	c++ $(CXXFLAGS) -Iexternal/DPF/distrho/src -o $@ $< -ldl -lpthread
 

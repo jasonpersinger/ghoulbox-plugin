@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Task 3: each CoreInstance is a private copy of libghoulbox_core.so: its own firmware globals. */
 #include "../host/core_loader.h"
+#include "private_runtime_dir.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -113,6 +114,7 @@ static void test_missing_symbol_fails()
 
 int main()
 {
+    PrivateRuntimeDir rt;
     struct { const char* name; void (*fn)(); } t[] = {
         {"test_two_instances_independent", test_two_instances_independent},
         {"test_state_isolated", test_state_isolated},
