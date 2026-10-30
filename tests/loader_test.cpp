@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Task 3: each CoreInstance is a private copy of libghoulbox_core.so: its own firmware globals. */
 #include "../host/core_loader.h"
+#include "../host/global_params.h"
 #include "private_runtime_dir.h"
 #include <cmath>
 #include <cstdio>
@@ -112,6 +113,24 @@ static void test_missing_symbol_fails()
     CHECK(tempFiles() == 0 && mappings() == 0);
 }
 
+/* Plan 2: the plugin's DREAM / TYPE / TAPE parameters are the firmware's ranges and names */
+static void test_global_params_match_core()
+{
+    std::string err;
+    auto c = CoreInstance::open(LIB, &err);
+    CHECK(c);
+    for (const GlobalParam& g : GLOBAL_PARAMS) {
+        char label[8];
+        int16_t mn, mx;
+        const char* const* names;
+        CHECK(c->api().global_desc(g.gb, label, &mn, &mx, &names) == 1);
+        CHECK(mn == g.min && mx == g.max);
+        CHECK(!names == !g.names);
+        for (int v = 0; names && v <= mx - mn; v++)
+            CHECK(std::strcmp(names[v], g.names[v]) == 0);
+    }
+}
+
 int main()
 {
     PrivateRuntimeDir rt;
@@ -120,6 +139,7 @@ int main()
         {"test_state_isolated", test_state_isolated},
         {"test_no_temp_leftovers", test_no_temp_leftovers},
         {"test_missing_symbol_fails", test_missing_symbol_fails},
+        {"test_global_params_match_core", test_global_params_match_core},
     };
     for (auto& x : t) {
         int f = fails;

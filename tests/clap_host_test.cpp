@@ -2,6 +2,7 @@
 /* Task 7: the real plugin (build/plugin/ghoulbox.clap) in a minimal CLAP host: it plays, instances stay apart, its state
  * comes back and garbage is refused, the shared library is written, nothing is left in the temp folder. */
 #include "clap/entry.h"
+#include "clap/ext/params.h"
 #include "clap/ext/state.h"
 #include "clap/host.h"
 #include "clap/plugin-factory.h"
@@ -57,7 +58,7 @@ struct Inst {
         }
     }
     /* n frames (one block); its peak. midi: one message at frame 0 */
-    float run(uint32_t n, const uint8_t* midi = nullptr)
+    float run(uint32_t n, const uint8_t* midi = nullptr, const clap_input_events_t* extra = nullptr)
     {
         std::vector<float> l(n), r(n);
         float* ch[2] = {l.data(), r.data()};
@@ -76,7 +77,7 @@ struct Inst {
         pr.frames_count = n;
         pr.audio_outputs = &out;
         pr.audio_outputs_count = 1;
-        pr.in_events = &in.list;
+        pr.in_events = extra ? extra : &in.list;
         pr.out_events = &outEvents;
         p->process(p, &pr);
         t += n;
@@ -270,6 +271,55 @@ static void test_missing_core_keeps_state()
     CHECK(project(n.save()) == project(s));           /* what it was given, given back */
 }
 
+/* Plan 2: params 0..33 are Plan 1's, in order (saved projects find their values by index); 34..39 are new */
+static void test_param_ids_append_only()
+{
+    Inst a;
+    CHECK(a.p);
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    CHECK(pa && pa->count(a.p) == 40);
+    std::vector<std::string> want = {"Master", "Host sync"};
+    for (int t = 1; t <= 4; t++)
+        for (const char* k : {"Level", "Pan", "Reverb", "Delay", "Knob 1", "Knob 2", "Knob 3", "Knob 4"})
+            want.push_back("Track " + std::to_string(t) + " " + k);
+    for (const char* k : {"Dream Evolve", "Dream Density", "Dream Drift", "Dream Mood", "Reverb Type", "Tape"})
+        want.push_back(k);
+    for (uint32_t i = 0; i < 40; i++) {
+        clap_param_info_t info{};
+        CHECK(pa->get_info(a.p, i, &info));
+        if (want[i] != info.name)
+            std::fprintf(stderr, "  param %u: %s, want %s\n", i, info.name, want[i].c_str());
+        CHECK(want[i] == info.name);
+    }
+}
+
+/* Plan 2: a DREAM parameter reaches the music (the project's state changes) */
+static void test_global_param_changes_state()
+{
+    Inst a;
+    CHECK(a.p);
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    clap_param_info_t info{};
+    CHECK(pa && pa->get_info(a.p, 35, &info));
+    a.runFor(0.1);
+    const std::string before = project(a.save());
+    struct P {
+        clap_event_param_value_t e{};
+        clap_input_events_t list{this, [](const clap_input_events_t*) -> uint32_t { return 1; },
+                                 [](const clap_input_events_t* l, uint32_t) -> const clap_event_header_t* { return &((P*)l->ctx)->e.header; }};
+    } ev;
+    ev.e.header = {sizeof ev.e, 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
+    ev.e.param_id = info.id;
+    ev.e.note_id = -1;
+    ev.e.port_index = ev.e.channel = ev.e.key = -1;
+    ev.e.value = 2;
+    a.run(512, nullptr, &ev.list);
+    a.runFor(0.1);
+    const std::string after = project(a.save());
+    CHECK(!before.empty() && !after.empty());
+    CHECK(before != after);
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -313,6 +363,8 @@ int main()
         {"test_autosave_stays_private", test_autosave_stays_private},
         {"test_missing_core_keeps_state", test_missing_core_keeps_state},
         {"test_no_temp_leftovers", test_no_temp_leftovers},
+        {"test_param_ids_append_only", test_param_ids_append_only},
+        {"test_global_param_changes_state", test_global_param_changes_state},
     };
     for (auto& x : t) {
         int f = fails;

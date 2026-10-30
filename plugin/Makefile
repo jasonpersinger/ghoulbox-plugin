@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # GHOULBOX as CLAP, VST3 and LV2 (DPF). Built from the top level: make plugin
 NAME = ghoulbox
-FILES_DSP = GhoulboxPlugin.cpp ../host/engine.cpp ../host/core_loader.cpp ../host/clock_gen.cpp ../host/library.cpp
+FILES_DSP = GhoulboxPlugin.cpp ../host/engine.cpp ../host/core_loader.cpp ../host/clock_gen.cpp ../host/library.cpp \
+            ../host/ui_bridge.cpp
 DPF_TARGET_DIR = ../build/plugin
 DPF_BUILD_DIR = ../build/plugin-obj
 

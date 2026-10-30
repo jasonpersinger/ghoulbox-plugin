@@ -7,7 +7,10 @@
 #include "extra/Base64.hpp"
 #include "clock_gen.h"
 #include "engine.h"
+#include "global_params.h"
 #include "library.h"
+#include "ui_bridge.h"
+#include "ui_link.h"
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
@@ -17,7 +20,8 @@
 
 START_NAMESPACE_DISTRHO
 
-enum { kMaster, kHostSync, kTrackFirst, kTrackParams = 8, kParamCount = kTrackFirst + 4 * kTrackParams };
+enum { kMaster, kHostSync, kTrackFirst, kTrackParams = 8, kGlobalFirst = kTrackFirst + 4 * kTrackParams,
+       kParamCount = kGlobalFirst + 6 };   // ids are append-only: saved projects find their values by index
 static const struct { const char* name; const char* sym; uint8_t cc; } TRACK_PARAMS[kTrackParams] = {
     {"Level", "level", 7}, {"Pan", "pan", 10}, {"Reverb", "reverb", 91}, {"Delay", "delay", 94},
     {"Knob 1", "knob1", 21}, {"Knob 2", "knob2", 22}, {"Knob 3", "knob3", 23}, {"Knob 4", "knob4", 24},
@@ -50,6 +54,7 @@ public:
         api.boot();
         snap_.resize(base_.size());
         engine_.reset(new Engine(std::move(core), getSampleRate()));
+        bridge_.reset(new UiBridge());
         worker_ = std::thread([this] { work(); });
     }
 
@@ -88,6 +93,21 @@ protected:
             p.name = "Host sync";
             p.symbol = "host_sync";
             p.ranges = ParameterRanges(1, 0, 1);
+        } else if (i >= kGlobalFirst) {
+            const GlobalParam& g = GLOBAL_PARAMS[i - kGlobalFirst];
+            const uint32_t n = g.names ? (uint32_t)(g.max - g.min + 1) : 0;
+            p.name = g.name;
+            p.symbol = g.sym;
+            p.ranges = ParameterRanges(-1, -1, g.max);
+            p.enumValues.count = 1 + n;                 // -1: unset, as the track params; then the firmware's names
+            p.enumValues.restrictedMode = false;
+            p.enumValues.values = new ParameterEnumerationValue[1 + n];
+            p.enumValues.values[0].value = -1;
+            p.enumValues.values[0].label = "—";
+            for (uint32_t k = 0; k < n; k++) {
+                p.enumValues.values[1 + k].value = (float)(g.min + (int)k);
+                p.enumValues.values[1 + k].label = g.names[k];
+            }
         } else {
             const uint32_t t = (i - kTrackFirst) / kTrackParams, k = (i - kTrackFirst) % kTrackParams;
             p.name = String("Track ") + String(t + 1) + " " + TRACK_PARAMS[k].name;
@@ -161,13 +181,21 @@ protected:
         }
         std::lock_guard<std::mutex> g(coreMutex_);
         applyParams();
+        bridge_->drain([this](const UiInput& in) { applyInput(in); });
         clockEvents_.clear();
         if (param_[kHostSync] > 0.5f)
             clock_.block(hostTime(), frames, getSampleRate(), clockEvents_);
         mergeEvents(midi, nmidi);
         engine_->process(out[0], out[1], frames, events_.data(), (uint32_t)events_.size());
+        if (bridge_->due(frames, getSampleRate())) {     // (a window is open: its view, ~60 times a second)
+            api().view_read(&view_);
+            bridge_->publish(view_, api().screen());
+        }
         snapshot();
     }
+
+public:
+    UiBridge* bridge() { return bridge_.get(); }        // (nullptr: no core)
 
 private:
     const GbApi& api() const { return engine_->core().api(); }
@@ -184,9 +212,23 @@ private:
             else if (i == kHostSync) {
                 api().clock_external(v > 0.5f);
                 clock_.reset();
+            } else if (i >= kGlobalFirst) {
+                if (v >= 0)
+                    api().global_set(GLOBAL_PARAMS[i - kGlobalFirst].gb, (int32_t)std::lround(v));
             } else if (v >= 0)
                 api().track_cc((i - kTrackFirst) / kTrackParams, TRACK_PARAMS[(i - kTrackFirst) % kTrackParams].cc,
                                (uint8_t)std::lround(v));
+        }
+    }
+
+    void applyInput(const UiInput& in)                  // a window's input, into the core
+    {
+        switch (in.kind) {
+        case UiInput::Button: api().button((uint32_t)in.a, in.b); break;
+        case UiInput::Enc: api().enc((uint32_t)in.a, in.b); break;
+        case UiInput::Keys: api().keys((uint32_t)in.a); break;
+        case UiInput::Track: api().track_select((uint32_t)in.a); break;
+        case UiInput::Sound: api().sound_load((uint32_t)in.a); break;
         }
     }
 
@@ -262,6 +304,8 @@ private:
     }
 
     std::unique_ptr<Engine> engine_;
+    std::unique_ptr<UiBridge> bridge_;                  // the window's way in (with the core)
+    gb_view view_{};                                    // (audio thread) the view being published
     String heldState_;                                  // the project's state, while there is no core to hold it
     mutable std::mutex coreMutex_;
     ClockGen clock_;
@@ -285,3 +329,9 @@ private:
 Plugin* createPlugin() { return new GhoulboxPlugin(); }
 
 END_NAMESPACE_DISTRHO
+
+UiBridge* ghoulboxBridge(void* pluginInstance)
+{
+    return pluginInstance ? static_cast<DISTRHO::GhoulboxPlugin*>(static_cast<DISTRHO::Plugin*>(pluginInstance))->bridge()
+                          : nullptr;
+}
