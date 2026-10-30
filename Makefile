@@ -6,7 +6,7 @@ SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
 CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
 
-.PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-plugin
+.PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-bridge test-plugin
 gen: $(GEN)
 $(GEN):
 	cd $(FEL) && python3 tools/build.py --gen-only
@@ -16,7 +16,7 @@ build/libghoulbox_core.so: core/ghoulbox_core.c core/ghoulbox_core.h | $(GEN)
 	@mkdir -p build
 	cc $(CORE_CFLAGS) -shared -fvisibility=hidden -o $@ $< -lm
 
-test: test-identical test-core test-loader test-engine test-clock test-library test-plugin
+test: test-identical test-core test-loader test-engine test-clock test-library test-bridge test-plugin
 
 test-identical: core
 	sh tests/identical_test.sh
@@ -59,6 +59,19 @@ build/library_test: tests/library_test.cpp host/library.cpp host/library.h
 
 test-library: build/library_test
 	build/library_test
+
+build/bridge_test: tests/bridge_test.cpp host/ui_bridge.cpp host/ui_bridge.h core/ghoulbox_core.h
+	@mkdir -p build
+	c++ $(CXXFLAGS) -o $@ tests/bridge_test.cpp host/ui_bridge.cpp -lpthread
+
+test-bridge: build/bridge_test
+	build/bridge_test
+
+# by hand, once per change to the bridge: the same tests under ThreadSanitizer
+test-bridge-tsan:
+	@mkdir -p build
+	c++ $(CXXFLAGS) -g -fsanitize=thread -o build/bridge_test_tsan tests/bridge_test.cpp host/ui_bridge.cpp -lpthread
+	build/bridge_test_tsan
 
 plugin: core build/resample.o
 	$(MAKE) -C plugin
