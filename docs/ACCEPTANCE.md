@@ -55,3 +55,7 @@ Known limits of the window:
 - Per-track outputs and dragging steps into REAPER as MIDI come in version 2.
 - MIDI layering follows GHOULBOX's MENU > MIDI > MIDI IN: on SEL every channel already plays the selected track, so
   the MIDI toggles change nothing there.
+
+**2026-10-30:** the owner waived the remaining checks of both lists ("no worries on any of these, proceed"), after
+playing GHOULBOX in REAPER with the window and MIDI layering working. The unfilled rows were not run; they stay here
+as the checklist for any regression later.
