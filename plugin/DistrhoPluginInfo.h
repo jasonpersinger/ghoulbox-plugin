@@ -2,7 +2,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND   "MESSYQUEST"                  /* placeholder name: final in Plan 3 */
+#define DISTRHO_PLUGIN_BRAND   "MESSYQUEST"                  /* the vendor name (owner, 2026-10-30) */
 #define DISTRHO_PLUGIN_NAME    "GHOULBOX"
 /* permanent ids: never change them (saved projects find the plugin by them; VST3's UID is BRAND_ID + UNIQUE_ID) */
 #define DISTRHO_PLUGIN_URI     "https://ghoulbox.messy.quest/plugin"
