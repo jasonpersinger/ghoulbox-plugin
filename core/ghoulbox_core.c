@@ -3,7 +3,27 @@
  * as web/emu/native_check.c builds it, plus the gb_* API (ghoulbox_core.h). Plugin-only behaviour lives here, never in
  * the firmware's files. Built with -fvisibility=hidden: only gb_* and felucca_web.c's web_* exports are visible. */
 #include "ghoulbox_core.h"                  /* first: hostsim.c blanks __attribute__ for the firmware's sources */
+
+/* MENU > CALIBRATION (ui_input.c panel_setup) waits in a loop for presses that, in here, could only come between
+ * renders: it would hang the host's audio thread. Its call sites are redirected to a refusal; its definition and
+ * prototype stay as they are (unused). `panel_setup(void)` -> GB_PS_void, `panel_setup()` -> GB_PS_ */
+static void gb_calibration_refused(void);
+#define GB_PS_void gb_fw_panel_setup(void)
+#define GB_PS_ gb_calibration_refused()
+#define panel_setup(...) GB_PS_ ## __VA_ARGS__
 #include "web/emu/felucca_web.c"
+#undef panel_setup
+#undef GB_PS_
+#undef GB_PS_void
+
+typedef char gb_chk_buttons[GB_NBTN == NB ? 1 : -1];
+typedef char gb_chk_encoders[GB_NENC == NE ? 1 : -1];
+
+static void gb_calibration_refused(void)
+{
+    ui_message("NOT IN PLUGIN");
+    ui.force = 1;
+}
 
 uint32_t gb_sample_rate(void) { return web_sample_rate(); }
 
@@ -41,6 +61,7 @@ void gb_boot(void)
     web_boot();
     while (web_now_ms() < GB_BOOT_MS)
         web_render(64);
+    usb.config = 1;                             /* the header's battery: external power (ui_draw.c batt_shown) */
 }
 
 uint32_t gb_midi(uint8_t status, uint8_t d1, uint8_t d2)
@@ -86,3 +107,149 @@ int gb_state_load(const uint8_t *in, uint32_t n)
     return web_project_restore(n) != 0;
 }
 uint32_t gb_playing(void) { return web_playing(); }
+
+/* ------------------------------------------------- the window (Plan 2) --- */
+static const uint8_t GB_G_ID[GB_NG] = {G_DREAM, G_DDENS, G_DDRFT, G_DMOOD, G_RTYPE, G_TAPE};
+
+static void gb_str(char *dst, const char *src, uint32_t cap)          /* cut to cap - 1, always ended */
+{
+    uint32_t i;
+    for (i = 0; src && src[i] && i + 1u < cap; i++)
+        dst[i] = src[i];
+    dst[i] = 0;
+}
+
+/* the CC value (0..127) that midi_cc_apply turns into v: its place in the shown order through the CC's scaling;
+ * the nearest place when the range is wider than 128 */
+static uint8_t gb_pos(const param_desc_t *d, int32_t v)
+{
+    const int32_t range = d->max - d->min, want = enum_rank(d, v) - d->min;
+    int32_t q, best = 0, gap = 0x7FFFFFFF;
+    if (range <= 0)
+        return 0;
+    for (q = 0; q < 128; q++) {
+        int32_t at = (range * q + 63) / 127, g = at > want ? at - want : want - at;
+        if (g < gap)
+            gap = g, best = q;
+        if (!g)
+            break;
+    }
+    return (uint8_t)best;
+}
+
+static void gb_ctl_fill(gb_ctl *c, const param_desc_t *d, int32_t v)
+{
+    char val[16], text[24];
+    const char *unit;
+    param_format(d, v, val, &unit);
+    gb_str(text, val, sizeof text);
+    gb_str(text + str_len(text), unit, sizeof text - str_len(text));
+    gb_str(c->label, d->label, sizeof c->label);
+    gb_str(c->text, text, sizeof c->text);
+    c->value = (int16_t)v;
+    c->min = d->min;
+    c->max = d->max;
+    c->pos = gb_pos(d, v);
+}
+
+static void gb_sound_name(uint32_t e, uint32_t k, char *out)        /* list entry e, k (NENGINES: user preset k) */
+{
+    char b[16];
+    if (e == NENGINES)
+        up_name(k, b);
+    else
+        gb_str(b, ENGINES[e]->npresets ? ENGINES[e]->presets[k % ENGINES[e]->npresets].name : ENGINES[e]->name, sizeof b);
+    gb_str(out, b, GB_NAME);
+}
+
+void gb_view_read(gb_view *v)
+{
+    uint32_t t, k, total, cur;
+    const track_t *s = &trk[song.sel % NTRK];
+    v->draws = web_screen_draws();
+    v->lit = web_lit_buttons();
+    v->dim = web_dim_buttons();
+    v->sel = song.sel;
+    v->playing = song.playing;
+    v->bpm = song.g[G_BPM];
+    for (t = 0; t < NTRK; t++) {
+        const track_t *x = &trk[t];
+        const uint32_t u = user_of(x);
+        gb_sound_name(u < UP_SLOTS ? NENGINES : x->eng_req % NENGINES, u < UP_SLOTS ? u : x->preset, v->track[t].sound);
+        gb_ctl_fill(&v->track[t].level, track_desc(x, P_LEVEL), x->p[P_LEVEL]);
+        v->track[t].mute = x->p[P_MUTE] != 0;
+    }
+    for (k = 0; k < 4u; k++) {
+        const uint32_t id = ENGINES[s->eng_req % NENGINES]->knob[k];
+        gb_ctl_fill(&v->knob[k], track_desc(s, id), s->p[id]);
+    }
+    for (k = 0; k < GB_NG; k++)
+        gb_ctl_fill(&v->global[k], &GP[GB_G_ID[k]], song.g[GB_G_ID[k]]);
+    v->step_page = song.playing ? (uint8_t)((s->seq_idx % NSTEP) / 16u) : 0;
+    v->step_now = song.playing ? (uint8_t)(s->seq_idx % 16u) : 255;
+    for (k = 0; k < 16u; k++) {
+        const step_t *st = &s->step[v->step_page * 16u + k];
+        v->step[k].on = st->time != ST_REST && (st->n || st->hit);
+        v->step[k].tie = st->time == ST_TIE;
+    }
+    cur = preset_all_pos(&total);
+    if (total > GB_SOUNDS_MAX)
+        total = GB_SOUNDS_MAX;
+    for (k = 0; k < total; k++) {
+        uint32_t p, e = preset_all_at(k, &p);
+        gb_sound_name(e, p, v->sound[k]);
+    }
+    v->nsounds = (uint16_t)total;
+    v->sound_now = (uint16_t)(cur < total ? cur : total);
+}
+
+const uint16_t *gb_screen(void) { return web_screen(); }
+
+void gb_button(uint32_t b, int down)
+{
+    if (b < GB_NBTN)
+        web_buttons(down ? web_btn_labels | 1u << b : web_btn_labels & ~(1u << b));
+}
+void gb_enc(uint32_t role, int32_t steps) { web_enc(role, steps); }
+void gb_keys(uint32_t mask) { web_keys(mask); }
+void gb_track_select(uint32_t t) { track_select(t); }
+
+void gb_sound_load(uint32_t i)                      /* ui.c preset_go, over the ALL list */
+{
+    uint32_t total, k, e;
+    preset_all_pos(&total);
+    if (i >= total)
+        return;
+    e = preset_all_at(i, &k);
+    if (e == NENGINES) {
+        up_load(k);
+    } else {
+        if (e != TSEL->eng_req)
+            select_engine(e);
+        apply_preset(k);
+    }
+    preset_hinted();
+}
+
+int gb_global_set(uint32_t g, int32_t v)            /* midi_cc_apply's MC_G, with the value itself */
+{
+    const param_desc_t *d;
+    if (g >= GB_NG)
+        return 0;
+    d = &GP[GB_G_ID[g]];
+    song.g[GB_G_ID[g]] = (int16_t)(v < d->min ? d->min : v > d->max ? d->max : v);
+    ui.force = 1;
+    return 1;
+}
+int gb_global_desc(uint32_t g, char label[8], int16_t *min, int16_t *max, const char *const **names)
+{
+    const param_desc_t *d;
+    if (g >= GB_NG)
+        return 0;
+    d = &GP[GB_G_ID[g]];
+    gb_str(label, d->label, 8);
+    *min = d->min;
+    *max = d->max;
+    *names = d->fmt == F_ENUM ? d->names : 0;
+    return 1;
+}

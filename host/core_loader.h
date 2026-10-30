@@ -2,6 +2,7 @@
 /* One plugin instance's private copy of libghoulbox_core.so: the firmware keeps its state in globals, so each instance
  * dlopens its own copy (a temp file, unlinked once mapped) and never shares them. */
 #pragma once
+#include "ghoulbox_core.h"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -23,7 +24,16 @@
     X(state_save, uint32_t, (uint8_t*, uint32_t))                         \
     X(state_load, int, (const uint8_t*, uint32_t))                        \
     X(playing, uint32_t, (void))                                          \
-    X(sample_rate, uint32_t, (void))
+    X(sample_rate, uint32_t, (void))                                      \
+    X(view_read, void, (gb_view*))                                        \
+    X(screen, const uint16_t*, (void))                                    \
+    X(button, void, (uint32_t, int))                                      \
+    X(enc, void, (uint32_t, int32_t))                                     \
+    X(keys, void, (uint32_t))                                             \
+    X(track_select, void, (uint32_t))                                     \
+    X(sound_load, void, (uint32_t))                                       \
+    X(global_set, int, (uint32_t, int32_t))                               \
+    X(global_desc, int, (uint32_t, char*, int16_t*, int16_t*, const char* const**))
 
 struct GbApi {
 #define GB_FIELD(name, ret, args) ret(*name) args;

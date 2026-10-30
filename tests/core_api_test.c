@@ -148,6 +148,115 @@ static void test_autosave_within_private(void)
     CHECK(changed > 0);
 }
 
+/* ------------------------------------------------------ Plan 2: the window's view and inputs --- */
+static gb_view v;
+
+static void test_calibration_refused(void)
+{
+    fresh();
+    ui.menu = 1;
+    ui.menu_sel = MI_PANEL - 1;                     /* RESTORE LAST, the row above CALIBRATION (SYSTEM) */
+    gb_enc(GB_ENC_PRESETS, 1);                      /* onto CALIBRATION and OCT+ in the same millisecond */
+    gb_button(GB_BTN_OCTUP, 1);
+    peak(MS(100));                                  /* (a hang: the alarm in run() fails it) */
+    gb_button(GB_BTN_OCTUP, 0);
+    peak(MS(20));
+    CHECK(ui.menu_sel == MI_PANEL);
+    CHECK(memcmp(&panel, &PANEL_DEFAULT, sizeof panel) == 0);
+    CHECK(strcmp(ui.msg, "NOT IN PLUGIN") == 0);
+}
+
+static void test_battery_external(void) { fresh(); CHECK(batt_shown() == 4); }
+
+static void test_view_basics(void)
+{
+    uint32_t i, k;
+    fresh();
+    gb_view_read(&v);
+    CHECK(v.sel == 0 && v.playing == 0 && v.bpm == song.g[G_BPM]);
+    CHECK(v.nsounds >= 59 && v.nsounds <= GB_SOUNDS_MAX);
+    for (i = 0; i < v.nsounds; i++)
+        CHECK(v.sound[i][0] && memchr(v.sound[i], 0, GB_NAME));
+    CHECK(v.sound_now < v.nsounds);
+    CHECK(strcmp(v.sound[v.sound_now], v.track[0].sound) == 0);
+    for (k = 0; k < 4u; k++)
+        CHECK(strncmp(v.knob[k].label, track_desc(&trk[0], ENGINES[trk[0].eng_req]->knob[k])->label, 7) == 0);
+}
+
+static int32_t sound_index(const char *name)
+{
+    uint32_t i;
+    for (i = 0; i < v.nsounds; i++)
+        if (strcmp(v.sound[i], name) == 0)
+            return (int32_t)i;
+    return -1;
+}
+
+static void test_sound_load(void)
+{
+    int32_t i;
+    fresh();
+    gb_view_read(&v);
+    i = sound_index("HURDY GURDY");
+    CHECK(i >= 0);
+    gb_sound_load((uint32_t)i);
+    peak(MS(50));
+    gb_view_read(&v);
+    CHECK(v.sound_now == (uint32_t)i);
+    CHECK(strcmp(v.track[0].sound, "HURDY GURDY") == 0);
+    CHECK(gb_state_save(blob, sizeof blob));
+    gb_sound_load(v.nsounds);
+    CHECK(gb_state_save(blob2, sizeof blob2));
+    CHECK(memcmp(blob, blob2, sizeof blob) == 0);
+}
+
+static void test_knob_pos_roundtrip(void)
+{
+    uint32_t k, j;
+    fresh();
+    for (k = 0; k < 4u; k++) {
+        const uint32_t id = ENGINES[trk[0].eng_req]->knob[k];
+        const param_desc_t *d = track_desc(&trk[0], id);
+        for (j = 0; j <= 8u; j++) {
+            const int16_t want = (int16_t)(d->min + (d->max - d->min) * (int32_t)j / 8);
+            trk[0].p[id] = want;
+            gb_view_read(&v);
+            gb_track_cc(0, (uint8_t)(21 + k), v.knob[k].pos);
+            peak(MS(20));
+            if (trk[0].p[id] != want)
+                fprintf(stderr, "  knob %u (%s) %d: pos %u -> %d\n", k, d->label, want, v.knob[k].pos, trk[0].p[id]);
+            CHECK(trk[0].p[id] == want);
+        }
+    }
+}
+
+static void test_global_set(void)
+{
+    fresh();
+    CHECK(gb_global_set(GB_G_DENS, 99) == 1);
+    gb_view_read(&v);
+    CHECK(v.global[GB_G_DENS].value == 8);
+    CHECK(gb_global_set(GB_G_MOOD, 2) == 1);
+    gb_view_read(&v);
+    CHECK(strcmp(v.global[GB_G_MOOD].text, "PHRY") == 0);
+    CHECK(gb_global_set(GB_NG, 0) == 0);
+}
+
+static void test_buttons_and_track_select(void)
+{
+    fresh();
+    gb_button(GB_BTN_SEQ, 1);
+    peak(MS(20));
+    CHECK(fm1_in.buttons == 1u << panel.btn[B_SEQ]);
+    gb_button(GB_BTN_SEQ, 0);
+    peak(MS(20));
+    CHECK(fm1_in.buttons == 0);
+    gb_track_select(2);
+    peak(MS(20));
+    gb_view_read(&v);
+    CHECK(v.sel == 2);
+}
+
 static int run(const char *name, void (*fn)(void))
 {
     int st;
@@ -155,6 +264,7 @@ static int run(const char *name, void (*fn)(void))
     fflush(stdout);
     p = fork();
     if (!p) {
+        alarm(60);                                  /* a hang fails (SIGALRM: not a normal exit) */
         fn();
         exit(0);
     }
@@ -176,6 +286,13 @@ int main(void)
     f += run("test_track_cc", test_track_cc);
     f += run("test_clock_follows", test_clock_follows);
     f += run("test_autosave_within_private", test_autosave_within_private);
+    f += run("test_calibration_refused", test_calibration_refused);
+    f += run("test_battery_external", test_battery_external);
+    f += run("test_view_basics", test_view_basics);
+    f += run("test_sound_load", test_sound_load);
+    f += run("test_knob_pos_roundtrip", test_knob_pos_roundtrip);
+    f += run("test_global_set", test_global_set);
+    f += run("test_buttons_and_track_select", test_buttons_and_track_select);
     printf(f ? "FAIL: %d\n" : "PASS: all\n", f);
     return f != 0;
 }
