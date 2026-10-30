@@ -118,6 +118,16 @@ static void test_pill_cycle()
     CHECK(cycleValue(-1, 0, 1) == 0);                    // unset: the first value
 }
 
+static void test_param_stale()
+{
+    CHECK(!ccParamStale(-1, 40, 127));                  // unset: the device's own value stands
+    CHECK(!ccParamStale(100, 100, 127));
+    CHECK(ccParamStale(100, 20, 127));                  // a new sound's knob at 20: the 100 is stale
+    CHECK(!ccParamStale(60, 64, 2));                    // both CCs land on the same of 3 values
+    CHECK(ccParamStale(20, 64, 2));
+    CHECK(!valueParamStale(2, 2) && valueParamStale(2, 1) && !valueParamStale(-1, 5));
+}
+
 int main()
 {
     struct { const char* name; void (*fn)(); } t[] = {
@@ -130,6 +140,7 @@ int main()
         {"test_list_top", test_list_top},
         {"test_sound_wheel_scroll", test_sound_wheel_scroll},
         {"test_pill_cycle", test_pill_cycle},
+        {"test_param_stale", test_param_stale},
     };
     for (auto& x : t) {
         int f = fails;

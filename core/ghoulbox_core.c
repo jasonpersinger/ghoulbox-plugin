@@ -25,13 +25,25 @@ static void gb_calibration_refused(void)
     ui.force = 1;
 }
 
+/* A button or key released before the firmware's next millisecond (ui_input) saw it held would be no tap at all
+ * (ui_input.c btn_hold reads fm1_in.buttons, a key its note's state): such a release waits, and gb_render steps a
+ * frame at a time until the firmware has ticked past the press, then applies it. The output depends only on the frames
+ * rendered, so stepping doesn't change it. */
+static uint32_t gb_btn_ms[GB_NBTN], gb_key_ms[27];
+static uint32_t gb_late_btn, gb_late_keys, gb_keys_want, gb_late_ms;   /* waiting releases; their press's ms */
+static void gb_late_apply(void);
+
 uint32_t gb_sample_rate(void) { return web_sample_rate(); }
 
 void gb_render(float *l, float *r, uint32_t n)
 {
     while (n) {
         uint32_t m = n < 1024u ? n : 1024u;
+        if (gb_late_btn | gb_late_keys)
+            m = 1;                                  /* (until the firmware ticks past the press) */
         web_render(m);
+        if ((gb_late_btn | gb_late_keys) && web_now_ms() != gb_late_ms)
+            gb_late_apply();
         memcpy(l, web_out_l(), m * sizeof *l);
         memcpy(r, web_out_r(), m * sizeof *r);
         l += m;
@@ -207,11 +219,48 @@ const uint16_t *gb_screen(void) { return web_screen(); }
 
 void gb_button(uint32_t b, int down)
 {
-    if (b < GB_NBTN)
-        web_buttons(down ? web_btn_labels | 1u << b : web_btn_labels & ~(1u << b));
+    if (b >= GB_NBTN)
+        return;
+    gb_late_btn &= ~(1u << b);
+    if (down) {
+        gb_btn_ms[b] = web_now_ms();
+        web_buttons(web_btn_labels | 1u << b);
+    } else if ((web_btn_labels >> b & 1u) && gb_btn_ms[b] == web_now_ms()) {
+        gb_late_btn |= 1u << b;                     /* pressed this millisecond: released after the next */
+        gb_late_ms = web_now_ms();
+    } else {
+        web_buttons(web_btn_labels & ~(1u << b));
+    }
 }
 void gb_enc(uint32_t role, int32_t steps) { web_enc(role, steps); }
-void gb_keys(uint32_t mask) { web_keys(mask); }
+void gb_keys(uint32_t mask)
+{
+    const uint32_t now = web_now_ms(), added = mask & ~web_key_mask, removed = web_key_mask & ~mask;
+    uint32_t k, late = 0;
+    for (k = 0; k < 27u; k++) {
+        if (added >> k & 1u)
+            gb_key_ms[k] = now;
+        if ((removed >> k & 1u) && gb_key_ms[k] == now)
+            late |= 1u << k;                        /* pressed this millisecond: released after the next */
+    }
+    gb_late_keys = late;
+    gb_keys_want = mask;
+    if (late)
+        gb_late_ms = now;
+    web_keys(mask | late);
+}
+
+static void gb_late_apply(void)
+{
+    if (gb_late_btn) {
+        web_buttons(web_btn_labels & ~gb_late_btn);
+        gb_late_btn = 0;
+    }
+    if (gb_late_keys) {
+        gb_late_keys = 0;
+        web_keys(gb_keys_want);
+    }
+}
 void gb_track_select(uint32_t t) { track_select(t); }
 
 void gb_sound_load(uint32_t i)                      /* ui.c preset_go, over the ALL list */

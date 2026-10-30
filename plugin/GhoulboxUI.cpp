@@ -11,6 +11,7 @@
 #include "pixels.h"
 #include "ui_bridge.h"
 #include "ui_link.h"
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -60,8 +61,10 @@ public:
 protected:
     void parameterChanged(uint32_t i, float v) override
     {
-        if (i < param_.size())
+        if (i < param_.size()) {
             param_[i] = v;
+            touched(i);
+        }
         repaint();
     }
 
@@ -71,6 +74,7 @@ protected:
             return;
         screenToRgba(screen_.data(), rgba_.data());
         haveView_ = imageDirty_ = true;                 // (uploaded in onNanoDisplay: GL is current only there)
+        releaseStale();
         repaint();
     }
 
@@ -184,6 +188,7 @@ protected:
             const float v = dragValue(dragStart_, (float)ev.pos.getY() / s() - dragY0_, pc.min, pc.max);
             if (v != param_[pc.id]) {
                 param_[pc.id] = v;
+                touched(pc.id);
                 setParameterValue(pc.id, v);
                 repaint();
             }
@@ -281,10 +286,38 @@ private:
     void setParam(uint32_t id, float v)                 // one step: a pill's click, a wheel notch
     {
         param_[id] = v;
+        touched(id);
         editParameter(id, true);
         setParameterValue(id, v);
         editParameter(id, false);
         repaint();
+    }
+
+    void touched(uint32_t id) { lastSet_[id] = std::chrono::steady_clock::now(); }
+
+    /* Review I2: a parameter set from here (or by the host) that the device has since moved away from (a sound load,
+     * a HARDWARE knob, a scene, undo) goes back to unset, so the host's project never brings back a stale value over
+     * the music. A grace after its last change lets a fresh value reach the device first. */
+    void releaseStale()
+    {
+        const auto now = std::chrono::steady_clock::now();
+        auto release = [&](uint32_t id, bool stale) {
+            if (!stale || (int)id == dragParam_ || now - lastSet_[id] < std::chrono::milliseconds(300))
+                return;
+            param_[id] = -1;
+            setParameterValue(id, -1);
+        };
+        const uint32_t sel = view_->sel % 4;
+        for (uint32_t k = 0; k < 4; k++) {
+            const gb_ctl& c = view_->knob[k];
+            release(trackParam(sel, 4 + k), ccParamStale(param_[trackParam(sel, 4 + k)], c.pos, c.max - c.min));
+        }
+        for (uint32_t t = 0; t < 4; t++) {
+            const gb_ctl& c = view_->track[t].level;
+            release(trackParam(t, 0), ccParamStale(param_[trackParam(t, 0)], c.pos, c.max - c.min));
+        }
+        for (uint32_t g = 0; g < GB_NG; g++)
+            release(kGlobalFirst + g, valueParamStale(param_[kGlobalFirst + g], view_->global[g].value));
     }
 
     void turn(int enc, int steps)
@@ -533,6 +566,7 @@ private:
     int dragParam_ = -1;                                 // the parameter a drag sets, -1 = none
     float dragStart_ = 0, dragY0_ = 0;
     int top_ = 0;                                        // the sound list's first shown row
+    std::vector<std::chrono::steady_clock::time_point> lastSet_ = std::vector<std::chrono::steady_clock::time_point>(kParams);
     uint32_t lastSoundNow_ = 0xFFFF;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhoulboxUI)

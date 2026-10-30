@@ -257,6 +257,47 @@ static void test_buttons_and_track_select(void)
     CHECK(v.sel == 2);
 }
 
+/* Review I1: a press and its release in one host block of 32 frames (a touchpad tap, a stalled host) still reach the
+ * firmware as a tap, whatever the block's phase against the firmware's millisecond */
+static void test_quick_tap_reaches_firmware(void)
+{
+    uint32_t off;
+    for (off = 0; off < 128u; off += 4u) {
+        fresh();
+        if (off)
+            gb_render(bl, br, off);
+        ui.menu = 1;
+        peak(MS(30));
+        gb_button(GB_BTN_HOME, 1);
+        gb_render(bl, br, 32);
+        gb_button(GB_BTN_HOME, 0);
+        gb_render(bl, br, 32);
+        peak(MS(100));
+        if (ui.menu)
+            fprintf(stderr, "  offset %u: the HOME tap was lost\n", off);
+        CHECK(ui.menu == 0);
+    }
+}
+static void test_quick_key_plays(void)
+{
+    uint32_t off;
+    for (off = 0; off < 128u; off += 8u) {
+        fresh();
+        if (off)
+            gb_render(bl, br, off);
+        gb_keys(1u << 7);                           /* C4 */
+        gb_render(bl, br, 32);
+        gb_keys(0);
+        gb_render(bl, br, 32);
+        {
+            const float pk = peak(MS(100));             /* the note sounded (its release tail, at least) */
+            if (pk <= 0.01f)
+                fprintf(stderr, "  offset %u: the key tap was silent (peak %g)\n", off, pk);
+            CHECK(pk > 0.01f);
+        }
+    }
+}
+
 static int run(const char *name, void (*fn)(void))
 {
     int st;
@@ -293,6 +334,8 @@ int main(void)
     f += run("test_knob_pos_roundtrip", test_knob_pos_roundtrip);
     f += run("test_global_set", test_global_set);
     f += run("test_buttons_and_track_select", test_buttons_and_track_select);
+    f += run("test_quick_tap_reaches_firmware", test_quick_tap_reaches_firmware);
+    f += run("test_quick_key_plays", test_quick_key_plays);
     printf(f ? "FAIL: %d\n" : "PASS: all\n", f);
     return f != 0;
 }

@@ -31,3 +31,12 @@ int scrollTop(int top, int notchesDown, int count, int rows)
 }
 
 int cycleValue(int value, int min, int max) { return value < min || value >= max ? min : value + 1; }
+
+static int ccLanding(int cc, int range) { return (range * cc + 63) / 127; }   // midi_cc_apply's scaling
+
+bool ccParamStale(float param, int livePos, int range)
+{
+    return param >= 0 && range > 0 && ccLanding((int)std::lround(param), range) != ccLanding(livePos, range);
+}
+
+bool valueParamStale(float param, int live) { return param >= 0 && (int)std::lround(param) != live; }
