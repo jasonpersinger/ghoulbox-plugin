@@ -2,6 +2,7 @@
 /* Task 7: the real plugin (build/plugin/ghoulbox.clap) in a minimal CLAP host: it plays, instances stay apart, its state
  * comes back and garbage is refused, the shared library is written, nothing is left in the temp folder. */
 #include "clap/entry.h"
+#include "clap/ext/gui.h"
 #include "clap/ext/params.h"
 #include "clap/ext/state.h"
 #include "clap/host.h"
@@ -320,6 +321,16 @@ static void test_global_param_changes_state()
     CHECK(before != after);
 }
 
+/* Plan 2: the plugin has a window (X11, embedded) */
+static void test_gui_extension()
+{
+    Inst a;
+    CHECK(a.p);
+    auto* gui = (const clap_plugin_gui_t*)a.p->get_extension(a.p, CLAP_EXT_GUI);
+    CHECK(gui);
+    CHECK(gui->is_api_supported(a.p, CLAP_WINDOW_API_X11, false));
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -365,6 +376,7 @@ int main()
         {"test_no_temp_leftovers", test_no_temp_leftovers},
         {"test_param_ids_append_only", test_param_ids_append_only},
         {"test_global_param_changes_state", test_global_param_changes_state},
+        {"test_gui_extension", test_gui_extension},
     };
     for (auto& x : t) {
         int f = fails;

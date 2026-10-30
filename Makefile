@@ -81,7 +81,14 @@ build/ui_logic_test: tests/ui_logic_test.cpp $(UI_SRC) ui/layout.h ui/keymap.h u
 test-ui: build/ui_logic_test
 	build/ui_logic_test
 
-plugin: core build/resample.o
+# the window's fonts (OFL, from the firmware: external/Felucca/LICENSES), as C++ data (DPF's res2c)
+FONTS := $(FEL)/assets/fonts/VT323-Regular.ttf $(FEL)/assets/fonts/PirataOne-Regular.ttf
+build/gen-ui/fonts.cpp: $(FONTS)
+	@rm -rf build/gen-ui && mkdir -p build/gen-ui/res
+	cp $(FONTS) build/gen-ui/res/
+	python3 external/DPF/utils/res2c.py fonts build/gen-ui/res build/gen-ui
+
+plugin: core build/resample.o build/gen-ui/fonts.cpp
 	$(MAKE) -C plugin
 	for d in build/plugin build/plugin/ghoulbox.vst3/Contents/x86_64-linux build/plugin/ghoulbox.lv2; do \
 		cp build/libghoulbox_core.so $$d/ || exit 1; done
@@ -93,6 +100,14 @@ build/clap_host_test: tests/clap_host_test.cpp tests/private_runtime_dir.h
 test-plugin: plugin build/clap_host_test
 	sh tests/plugin_smoke.sh
 	build/clap_host_test
+
+# by hand, with an X display: the real window in a bare host, pictured into build/gui-snapshot.png
+build/gui_snapshot: tests/gui_snapshot.cpp
+	@mkdir -p build
+	c++ $(CXXFLAGS) -Iexternal/DPF/distrho/src -o $@ $< -ldl -lpthread -lX11
+
+gui-snapshot: plugin build/gui_snapshot
+	build/gui_snapshot
 
 # the user's sudo-free plugin folders (the CLAP's core goes beside it in ~/.clap)
 install: plugin

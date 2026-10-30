@@ -10,7 +10,12 @@
 #define DISTRHO_PLUGIN_BRAND_ID  MsyQ
 #define DISTRHO_PLUGIN_UNIQUE_ID GhBx
 
-#define DISTRHO_PLUGIN_HAS_UI           0
+#define DISTRHO_PLUGIN_HAS_UI           1
+#define DISTRHO_UI_USE_NANOVG           1
+#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1   /* the window reaches its instance's UI bridge (plugin/ui_link.h) */
+#define DISTRHO_UI_USER_RESIZABLE       1
+#define DISTRHO_UI_DEFAULT_WIDTH        1040
+#define DISTRHO_UI_DEFAULT_HEIGHT       860
 #define DISTRHO_PLUGIN_IS_SYNTH         1
 #define DISTRHO_PLUGIN_NUM_INPUTS       0
 #define DISTRHO_PLUGIN_NUM_OUTPUTS      2
