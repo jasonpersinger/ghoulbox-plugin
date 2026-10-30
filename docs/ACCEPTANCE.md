@@ -46,9 +46,12 @@ you click the screen, and only if the FX window's **+ menu > Send all keyboard i
 | 7 | Two instances, both windows open. | Each window shows and controls only its own GHOULBOX. | | |
 | 8 | Performance Meter: CPU per instance with the window open, then closed. | Write both % here. | | |
 | 9 | Your look check: colours, sizes, wording. | Note anything to change; each becomes a follow-up. | | |
+| 10 | MIDI layering: light **MIDI** on T1 and T2 (beside their faders) and play from any MIDI channel. Then turn both off. | Lit: each note plays both tracks' sounds together, whatever the channel. Off: back to channels 1–4 playing tracks 1–4. | | |
 
 Known limits of the window:
 - The step grid shows the steps; editing them is on the device's screen (SEQ).
 - MENU > SYSTEM's USB SERIAL and USB LEVEL do nothing in the plugin; CALIBRATION is refused; the battery shows the
   external-power bolt.
 - Per-track outputs and dragging steps into REAPER as MIDI come in version 2.
+- MIDI layering follows GHOULBOX's MENU > MIDI > MIDI IN: on SEL every channel already plays the selected track, so
+  the MIDI toggles change nothing there.

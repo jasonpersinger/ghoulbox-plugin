@@ -298,6 +298,17 @@ static void test_quick_key_plays(void)
     }
 }
 
+/* MIDI layering (plugin): the channels that reach the tracks follow MIDI IN (G_ROUTE) */
+static void test_midi_base(void)
+{
+    fresh();
+    CHECK(gb_midi_base() == 0);                     /* CH1-4, the default */
+    song.g[G_ROUTE] = 2;
+    CHECK(gb_midi_base() == 4);                     /* CH5-8 */
+    song.g[G_ROUTE] = 1;
+    CHECK(gb_midi_base() == -1);                    /* SEL */
+}
+
 static int run(const char *name, void (*fn)(void))
 {
     int st;
@@ -336,6 +347,7 @@ int main(void)
     f += run("test_buttons_and_track_select", test_buttons_and_track_select);
     f += run("test_quick_tap_reaches_firmware", test_quick_tap_reaches_firmware);
     f += run("test_quick_key_plays", test_quick_key_plays);
+    f += run("test_midi_base", test_midi_base);
     printf(f ? "FAIL: %d\n" : "PASS: all\n", f);
     return f != 0;
 }

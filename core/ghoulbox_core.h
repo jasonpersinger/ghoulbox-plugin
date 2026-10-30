@@ -66,6 +66,8 @@ GB_API void gb_keys(uint32_t mask);              /* the 27 keys, bit k = F3 + k 
 GB_API void gb_track_select(uint32_t t);
 GB_API void gb_sound_load(uint32_t i);           /* list index i into the selected track, as the PRESETS knob; i >= the
                                                   * list's length: nothing */
+GB_API int32_t gb_midi_base(void);             /* MIDI IN: the channel (0..15) that plays track 1 (2..4 follow); -1 = SEL
+                                                  * (every channel plays the selected track) */
 GB_API int gb_global_set(uint32_t g, int32_t v); /* into its range; 0 = no such g */
 GB_API int gb_global_desc(uint32_t g, char label[8], int16_t *min, int16_t *max, const char *const **names);
 

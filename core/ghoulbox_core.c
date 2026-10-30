@@ -280,6 +280,8 @@ void gb_sound_load(uint32_t i)                      /* ui.c preset_go, over the 
     preset_hinted();
 }
 
+int32_t gb_midi_base(void) { return midi_base(); }   /* seq.c: G_ROUTE's block */
+
 int gb_global_set(uint32_t g, int32_t v)            /* midi_cc_apply's MC_G, with the value itself */
 {
     const param_desc_t *d;

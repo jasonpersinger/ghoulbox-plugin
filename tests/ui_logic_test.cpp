@@ -22,6 +22,7 @@ static void test_controls_complete()
     CHECK(n[Ctl::Button] == 14 && n[Ctl::Enc] == 7 && n[Ctl::Knob] == 4 && n[Ctl::Global] == 6);
     CHECK(n[Ctl::Master] == 1 && n[Ctl::Fader] == 4 && n[Ctl::TrackSel] == 4 && n[Ctl::Step] == 16);
     CHECK(n[Ctl::Screen] == 1 && n[Ctl::SoundList] == 1);
+    CHECK(n[Ctl::Layer] == 4);                            // the tracks' MIDI layer toggles
 }
 
 static void test_no_overlaps()

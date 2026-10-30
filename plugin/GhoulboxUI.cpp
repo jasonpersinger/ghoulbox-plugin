@@ -29,7 +29,8 @@ const char* const ENC_NAME[GB_NENC] = {"SELECT", "ALGO", "PRESETS", "K1", "K2", 
 constexpr float kEncStepPx = 12;                         // a vertical drag of 12 px: one encoder step
 constexpr uint32_t kPlayGreen = 1u << 14;                // web_lit_buttons: PLAY's green
 /* the plugin's parameter ids (plugin/GhoulboxPlugin.cpp: append-only) */
-constexpr uint32_t kMaster = 0, kHostSync = 1, kTrackFirst = 2, kTrackParams = 8, kGlobalFirst = 34, kParams = 40;
+constexpr uint32_t kMaster = 0, kHostSync = 1, kTrackFirst = 2, kTrackParams = 8, kGlobalFirst = 34, kLayerFirst = 40,
+                   kParams = 44;
 constexpr uint32_t trackParam(uint32_t t, uint32_t k) { return kTrackFirst + t * kTrackParams + k; }   // k: 0 Level, 4.. Knob
 bool isPill(int g) { return g == GB_G_EVOL || g == GB_G_RTYPE; }
 }
@@ -153,6 +154,9 @@ protected:
             break;
         case Ctl::TrackSel:
             push(UiInput::Track, h.idx, 0);
+            break;
+        case Ctl::Layer:                                // every MIDI note also plays this track
+            setParam(kLayerFirst + (uint32_t)h.idx, layerOn(h.idx) ? 0.f : 1.f);
             break;
         case Ctl::Global:
             if (isPill(h.idx)) {
@@ -292,6 +296,8 @@ private:
         editParameter(id, false);
         repaint();
     }
+
+    bool layerOn(int t) const { return param_[kLayerFirst + (uint32_t)t] > 0.5f; }
 
     void touched(uint32_t id) { lastSet_[id] = std::chrono::steady_clock::now(); }
 
@@ -499,6 +505,9 @@ private:
             box(Rect{fad.x + 7, fad.y, 6, fad.h}, NIGHT, STONE, 1, 3);
             const float y = fad.y + (1 - view_->track[t].level.pos / 127.f) * (fad.h - 10);
             box(Rect{fad.x, y, fad.w, 10}, mute ? STONE : drag_ == Hit{Ctl::Fader, t} ? AMBER : BONE, NIGHT, 1, 2);
+            const Rect lay = rectOf(Hit{Ctl::Layer, t});
+            box(lay, layerOn(t) ? AMBER : PLAQUE, layerOn(t) ? AMBER : STONE, 1, 3);
+            say(lay.x + lay.w / 2, lay.y + lay.h / 2 + 1, "MIDI", 14, layerOn(t) ? NIGHT : DIM, ALIGN_CENTER | ALIGN_MIDDLE);
         }
     }
 

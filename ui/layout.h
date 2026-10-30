@@ -11,7 +11,8 @@ struct Rect {
     bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 enum class Ctl : uint8_t { None, Screen, Button /*GB_BTN_*/, Enc /*GB_ENC_*/, Knob /*0..3*/, Global /*GB_G_*/,
-                           Master, Fader /*track*/, TrackSel /*track*/, SoundRow /*visible row*/, SoundList, Step /*0..15*/ };
+                           Master, Fader /*track*/, TrackSel /*track*/, SoundRow /*visible row*/, SoundList, Step /*0..15*/,
+                           Layer /*track: its MIDI layer toggle*/ };
 struct Hit {
     Ctl ctl;
     int idx;

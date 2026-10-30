@@ -35,6 +35,7 @@ static std::vector<std::pair<Hit, Rect>> build()
         const float x0 = 12 + t * 97.f;
         add(Ctl::TrackSel, t, {x0 + 8, 732, 81, 22});
         add(Ctl::Fader, t, {x0 + 38, 778, 20, 66});
+        add(Ctl::Layer, t, {x0 + 64, 800, 30, 20});                      // beside the fader: "MIDI"
     }
     for (int i = 0; i < 16; i++)
         add(Ctl::Step, i, {412 + i * 38.75f, 740, 34.75f, 80});

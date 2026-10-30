@@ -32,6 +32,7 @@
     X(keys, void, (uint32_t))                                             \
     X(track_select, void, (uint32_t))                                     \
     X(sound_load, void, (uint32_t))                                       \
+    X(midi_base, int32_t, (void))                                         \
     X(global_set, int, (uint32_t, int32_t))                               \
     X(global_desc, int, (uint32_t, char*, int16_t*, int16_t*, const char* const**))
 

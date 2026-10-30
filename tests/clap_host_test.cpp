@@ -278,14 +278,16 @@ static void test_param_ids_append_only()
     Inst a;
     CHECK(a.p);
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
-    CHECK(pa && pa->count(a.p) == 40);
+    CHECK(pa && pa->count(a.p) == 44);
     std::vector<std::string> want = {"Master", "Host sync"};
     for (int t = 1; t <= 4; t++)
         for (const char* k : {"Level", "Pan", "Reverb", "Delay", "Knob 1", "Knob 2", "Knob 3", "Knob 4"})
             want.push_back("Track " + std::to_string(t) + " " + k);
     for (const char* k : {"Dream Evolve", "Dream Density", "Dream Drift", "Dream Mood", "Reverb Type", "Tape"})
         want.push_back(k);
-    for (uint32_t i = 0; i < 40; i++) {
+    for (int t = 1; t <= 4; t++)
+        want.push_back("Track " + std::to_string(t) + " MIDI layer");
+    for (uint32_t i = 0; i < 44; i++) {
         clap_param_info_t info{};
         CHECK(pa->get_info(a.p, i, &info));
         if (want[i] != info.name)
@@ -329,6 +331,54 @@ static void test_gui_extension()
     auto* gui = (const clap_plugin_gui_t*)a.p->get_extension(a.p, CLAP_EXT_GUI);
     CHECK(gui);
     CHECK(gui->is_api_supported(a.p, CLAP_WINDOW_API_X11, false));
+}
+
+/* a block's input events: parameter values, then one MIDI message, all at frame 0 */
+struct MixedEvents {
+    union E { clap_event_header_t h; clap_event_param_value_t p; clap_event_midi_t m; };
+    std::vector<E> ev;
+    clap_input_events_t list{this, [](const clap_input_events_t* l) -> uint32_t { return (uint32_t)((MixedEvents*)l->ctx)->ev.size(); },
+                             [](const clap_input_events_t* l, uint32_t i) -> const clap_event_header_t* {
+                                 return &((MixedEvents*)l->ctx)->ev[i].h; }};
+    void param(clap_id id, double v)
+    {
+        E e{};
+        e.p.header = {sizeof e.p, 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
+        e.p.param_id = id;
+        e.p.note_id = e.p.port_index = e.p.channel = e.p.key = -1;
+        e.p.value = v;
+        ev.push_back(e);
+    }
+    void midi(const uint8_t* b)
+    {
+        E e{};
+        e.m.header = {sizeof e.m, 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI, 0};
+        std::memcpy(e.m.data, b, 3);
+        ev.push_back(e);
+    }
+};
+static clap_id paramId(const Inst& a, uint32_t index)
+{
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    clap_param_info_t info{};
+    return pa && pa->get_info(a.p, index, &info) ? info.id : CLAP_INVALID_ID;
+}
+
+/* MIDI layer: with tracks 1 and 2 lit, a note on channel 16 (which GHOULBOX's MIDI IN CH1-4 drops) plays */
+static void test_layer_plays_any_channel()
+{
+    static const uint8_t NOTE16[3] = {0x9F, 60, 100};
+    Inst off, on;
+    CHECK(off.p && on.p);
+    off.runFor(0.1);
+    on.runFor(0.1);
+    CHECK(off.runFor(0.2, NOTE16) < 1e-3f);             // no layer: channel 16 is dropped, as on the hardware
+    MixedEvents ev;
+    ev.param(paramId(on, 40), 1);
+    ev.param(paramId(on, 41), 1);
+    ev.midi(NOTE16);
+    on.run(512, nullptr, &ev.list);
+    CHECK(on.runFor(0.2) > 0.01f);
 }
 
 static int coreTemps()
@@ -377,6 +427,7 @@ int main()
         {"test_param_ids_append_only", test_param_ids_append_only},
         {"test_global_param_changes_state", test_global_param_changes_state},
         {"test_gui_extension", test_gui_extension},
+        {"test_layer_plays_any_channel", test_layer_plays_any_channel},
     };
     for (auto& x : t) {
         int f = fails;

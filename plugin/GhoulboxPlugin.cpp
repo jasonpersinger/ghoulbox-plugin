@@ -9,6 +9,7 @@
 #include "engine.h"
 #include "global_params.h"
 #include "library.h"
+#include "midi_layer.h"
 #include "ui_bridge.h"
 #include "ui_link.h"
 #include <atomic>
@@ -21,7 +22,7 @@
 START_NAMESPACE_DISTRHO
 
 enum { kMaster, kHostSync, kTrackFirst, kTrackParams = 8, kGlobalFirst = kTrackFirst + 4 * kTrackParams,
-       kParamCount = kGlobalFirst + 6 };   // ids are append-only: saved projects find their values by index
+       kLayerFirst = kGlobalFirst + 6, kParamCount = kLayerFirst + 4 };   // ids are append-only: saved projects find their values by index
 static const struct { const char* name; const char* sym; uint8_t cc; } TRACK_PARAMS[kTrackParams] = {
     {"Level", "level", 7}, {"Pan", "pan", 10}, {"Reverb", "reverb", 91}, {"Delay", "delay", 94},
     {"Knob 1", "knob1", 21}, {"Knob 2", "knob2", 22}, {"Knob 3", "knob3", 23}, {"Knob 4", "knob4", 24},
@@ -33,9 +34,11 @@ public:
     GhoulboxPlugin() : Plugin(kParamCount, 0, 1), library_(Library::defaultPath())
     {
         for (uint32_t i = 0; i < kParamCount; i++)
-            param_[i] = i == kMaster ? 800.f : i == kHostSync ? 1.f : -1.f;
+            param_[i] = i == kMaster ? 800.f : i == kHostSync ? 1.f : i >= kLayerFirst ? 0.f : -1.f;
         dirty_ = (1ull << kMaster) | (1ull << kHostSync);
         events_.reserve(MAX_EVENTS);
+        hostEvents_.reserve(MAX_EVENTS);
+        layered_.reserve(MAX_EVENTS);
         clockEvents_.reserve(MAX_EVENTS);
         if (isDummyInstance())
             return;
@@ -93,6 +96,11 @@ protected:
             p.name = "Host sync";
             p.symbol = "host_sync";
             p.ranges = ParameterRanges(1, 0, 1);
+        } else if (i >= kLayerFirst) {
+            p.hints |= kParameterIsBoolean;
+            p.name = String("Track ") + String(i - kLayerFirst + 1) + " MIDI layer";   // (plays every MIDI note too)
+            p.symbol = String("t") + String(i - kLayerFirst + 1) + "_layer";
+            p.ranges = ParameterRanges(0, 0, 1);
         } else if (i >= kGlobalFirst) {
             const GlobalParam& g = GLOBAL_PARAMS[i - kGlobalFirst];
             const uint32_t n = g.names ? (uint32_t)(g.max - g.min + 1) : 0;
@@ -212,6 +220,8 @@ private:
             else if (i == kHostSync) {
                 api().clock_external(v > 0.5f);
                 clock_.reset();
+            } else if (i >= kLayerFirst) {
+                                                        // (read in run: layerMask)
             } else if (i >= kGlobalFirst) {
                 if (v >= 0)
                     api().global_set(GLOBAL_PARAMS[i - kGlobalFirst].gb, (int32_t)std::lround(v));
@@ -243,19 +253,35 @@ private:
                         b.beatsPerMinute};
     }
 
-    /* the host's MIDI and the clock, by frame (the clock first on a tie); no allocation */
+    uint32_t layerMask() const                          // the lit "Track N MIDI layer" toggles
+    {
+        uint32_t m = 0;
+        for (uint32_t t = 0; t < 4; t++)
+            m |= (param_[kLayerFirst + t] > 0.5f ? 1u : 0u) << t;
+        return m;
+    }
+
+    /* the host's MIDI (onto the lit tracks: host/midi_layer) and the clock, by frame (the clock first on a tie); no
+     * allocation */
     void mergeEvents(const MidiEvent* midi, uint32_t nmidi)
     {
+        hostEvents_.clear();
+        for (uint32_t m = 0; m < nmidi && hostEvents_.size() < MAX_EVENTS; m++) {
+            const MidiEvent& e = midi[m];
+            if (e.size == 0 || e.size > 3)
+                continue;
+            hostEvents_.push_back(MidiEv{e.frame, {e.data[0], e.size > 1 ? e.data[1] : (uint8_t)0,
+                                                   e.size > 2 ? e.data[2] : (uint8_t)0}});
+        }
+        layered_.clear();
+        layerEvents(hostEvents_.data(), (uint32_t)hostEvents_.size(), layerMask(), api().midi_base(), layered_,
+                    MAX_EVENTS);
         events_.clear();
-        size_t c = 0;
-        for (uint32_t m = 0; events_.size() < MAX_EVENTS && (m < nmidi || c < clockEvents_.size());) {
-            if (m < nmidi && (c == clockEvents_.size() || midi[m].frame < clockEvents_[c].frame)) {
-                const MidiEvent& e = midi[m++];
-                if (e.size == 0 || e.size > 3)
-                    continue;
-                MidiEv x{e.frame, {e.data[0], e.size > 1 ? e.data[1] : (uint8_t)0, e.size > 2 ? e.data[2] : (uint8_t)0}};
-                events_.push_back(x);
-            } else
+        size_t c = 0, m = 0;
+        while (events_.size() < MAX_EVENTS && (m < layered_.size() || c < clockEvents_.size())) {
+            if (m < layered_.size() && (c == clockEvents_.size() || layered_[m].frame < clockEvents_[c].frame))
+                events_.push_back(layered_[m++]);
+            else
                 events_.push_back(clockEvents_[c++]);
         }
     }
@@ -310,7 +336,7 @@ private:
     mutable std::mutex coreMutex_;
     ClockGen clock_;
     const bool beatsAreQuarters_ = std::strcmp(getPluginFormatName(), "CLAP") == 0;   // (DPF's CLAP BBT: quarters)
-    std::vector<MidiEv> events_, clockEvents_;
+    std::vector<MidiEv> events_, clockEvents_, hostEvents_, layered_;
     std::atomic<float> param_[kParamCount];
     std::atomic<uint64_t> dirty_{0};
 
