@@ -24,3 +24,10 @@ int listTop(int current, int count, int rows, int top)
     }
     return std::min(count - rows, std::max(0, top));
 }
+
+int scrollTop(int top, int notchesDown, int count, int rows)
+{
+    return count <= rows ? 0 : std::min(count - rows, std::max(0, top + 3 * notchesDown));
+}
+
+int cycleValue(int value, int min, int max) { return value < min || value >= max ? min : value + 1; }

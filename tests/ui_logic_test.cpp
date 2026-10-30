@@ -103,6 +103,21 @@ static void test_list_top()
     CHECK(listTop(91, 91, 24, 80) == 67);                 // no current sound (== count): only clamped
 }
 
+static void test_sound_wheel_scroll()
+{
+    CHECK(scrollTop(0, 3, 91, 24) == 9);
+    CHECK(scrollTop(60, 5, 91, 24) == 67);               // clamped at the end
+    CHECK(scrollTop(2, -1, 91, 24) == 0);                // .. and at the top
+    CHECK(scrollTop(0, 3, 10, 24) == 0);                 // a short list doesn't scroll
+}
+
+static void test_pill_cycle()
+{
+    CHECK(cycleValue(2, 0, 2) == 0);
+    CHECK(cycleValue(0, 0, 2) == 1);
+    CHECK(cycleValue(-1, 0, 1) == 0);                    // unset: the first value
+}
+
 int main()
 {
     struct { const char* name; void (*fn)(); } t[] = {
@@ -113,6 +128,8 @@ int main()
         {"test_pixels", test_pixels},
         {"test_drag_from_live", test_drag_from_live},
         {"test_list_top", test_list_top},
+        {"test_sound_wheel_scroll", test_sound_wheel_scroll},
+        {"test_pill_cycle", test_pill_cycle},
     };
     for (auto& x : t) {
         int f = fails;
