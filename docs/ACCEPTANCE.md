@@ -26,3 +26,29 @@ Known limits in this build:
 - Tempo sync in x/8 time is fixed and tested for CLAP and VST3; the LV2 version in x/8 is untested.
 
 Measured by the builder (not REAPER): one core at about 0.5 % of a CPU core with a note held (204× real time).
+
+## Plan 2: the window
+
+Use the **CLAPi** version. Open GHOULBOX's window from the FX chain. Hardware controls by mouse: a left click presses a
+button while held; a **right click latches** it held (red outline) until you click it again, so you can hold one
+button and turn a dial (HARDWARE, right column: drag up/down or use the wheel). The computer keyboard plays the device
+like the browser emulator (Z row and A row: keys; number row: buttons; [ ]: OCT; arrows: SELECT / ALGORITHM) once
+you click the screen, and only if the FX window's **+ menu > Send all keyboard input to plug-in** is on.
+
+| # | Step | Pass when | Result | Notes |
+|---|------|-----------|--------|-------|
+| 1 | Open the window. Drag its corner to make it about 0.75x and 1.5x the size. | Opens within 1 s showing the live HOME screen, none of it cut off at the right or bottom; reads clearly at every size; the mouse still hits what's under it. | | |
+| 2 | Hold HOME (right-click latch) to open the MENU, step with PRESETS (HARDWARE dial) and ALGORITHM to SYSTEM > CALIBRATION, press OCT+. | "NOT IN PLUGIN" appears; audio carries on; REAPER doesn't freeze. | | |
+| 3 | Click a sound in the list; drag each of the 4 knobs, a track fader, DENS, TAPE and VOL; click EVOL and TYPE. | Each changes the sound, and the screen's pages agree (GLO for DREAM, FX for TYPE and TAPE). | | |
+| 4 | Track in Write automation mode: drag Track 1 Knob 1 in the window while playing. Then play it back in Read mode. | An envelope appears and plays back. | | |
+| 5 | Select T3 in TRACKS. | The knobs, the sound list's heading and the steps switch to track 3. | | |
+| 6 | Press play in REAPER with a pattern set. | The step grid's red marker follows playback; the top bar says PLAYING and SYNCED. | | |
+| 7 | Two instances, both windows open. | Each window shows and controls only its own GHOULBOX. | | |
+| 8 | Performance Meter: CPU per instance with the window open, then closed. | Write both % here. | | |
+| 9 | Your look check: colours, sizes, wording. | Note anything to change; each becomes a follow-up. | | |
+
+Known limits of the window:
+- The step grid shows the steps; editing them is on the device's screen (SEQ).
+- MENU > SYSTEM's USB SERIAL and USB LEVEL do nothing in the plugin; CALIBRATION is refused; the battery shows the
+  external-power bolt.
+- Per-track outputs and dragging steps into REAPER as MIDI come in version 2.

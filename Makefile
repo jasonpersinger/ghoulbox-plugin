@@ -89,6 +89,7 @@ build/gen-ui/fonts.cpp: $(FONTS)
 	python3 external/DPF/utils/res2c.py fonts build/gen-ui/res build/gen-ui
 
 plugin: core build/resample.o build/gen-ui/fonts.cpp
+	rm -f build/plugin/ghoulbox.lv2/ghoulbox_dsp.*   # (Plan 1 built a window-less LV2 under that name)
 	$(MAKE) -C plugin
 	for d in build/plugin build/plugin/ghoulbox.vst3/Contents/x86_64-linux build/plugin/ghoulbox.lv2; do \
 		cp build/libghoulbox_core.so $$d/ || exit 1; done
