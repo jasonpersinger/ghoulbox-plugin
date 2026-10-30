@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
+VERSION := 0.1.0
 FEL := external/Felucca
 GEN := $(FEL)/build/gen
 # as native_check (the Global Constraints): the firmware compiled unmodified
@@ -6,7 +7,7 @@ SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
 CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
 
-.PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-bridge test-layer test-ui test-plugin
+.PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-bridge test-layer test-ui test-plugin dist test-dist
 gen: $(GEN)
 $(GEN):
 	cd $(FEL) && python3 tools/build.py --gen-only
@@ -123,3 +124,10 @@ install: plugin
 	rm -rf ~/.vst3/ghoulbox.vst3 ~/.lv2/ghoulbox.lv2
 	cp -r build/plugin/ghoulbox.vst3 ~/.vst3/
 	cp -r build/plugin/ghoulbox.lv2 ~/.lv2/
+
+# the release package for itch.io (from the committed tree): build/dist/ghoulbox-$(VERSION)-linux-x86_64.zip
+dist: plugin
+	sh tools/make_dist.sh $(VERSION)
+
+test-dist: dist
+	sh tests/dist_test.sh
