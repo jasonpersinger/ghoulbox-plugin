@@ -384,21 +384,29 @@ static clap_id paramId(const Inst& a, uint32_t index)
     return pa && pa->get_info(a.p, index, &info) ? info.id : CLAP_INVALID_ID;
 }
 
-/* MIDI layer: with tracks 1 and 2 lit, a note on channel 16 (which GHOULBOX's MIDI IN CH1-4 drops) plays */
+/* MIDI slot layering: a note on channel 16 plays slot 1 by default; enabling slot 3 plays both; all off is silent */
 static void test_layer_plays_any_channel()
 {
     static const uint8_t NOTE16[3] = {0x9F, 60, 100};
-    Inst off, on;
-    CHECK(off.p && on.p);
-    off.runFor(0.1);
+    Inst on;
+    CHECK(on.p);
     on.runFor(0.1);
-    CHECK(off.runFor(0.2, NOTE16) < 1e-3f);             // no layer: channel 16 is dropped, as on the hardware
-    MixedEvents ev;
-    ev.param(paramId(on, 36), 1);
-    ev.param(paramId(on, 37), 1);
-    ev.midi(NOTE16);
-    on.run(512, nullptr, &ev.list);
+    CHECK(on.runFor(0.2, NOTE16) > 0.01f);             // slot 1 is enabled by default: plays
+
+    MixedEvents evBoth;
+    evBoth.param(paramId(on, 38), 1);                 // enable slot 3 as well
+    evBoth.midi(NOTE16);
+    on.run(512, nullptr, &evBoth.list);
     CHECK(on.runFor(0.2) > 0.01f);
+
+    Inst off;
+    CHECK(off.p);
+    off.runFor(0.1);
+    MixedEvents evOff;
+    evOff.param(paramId(off, 36), 0);                 // disable slot 1 (all slots off)
+    off.run(512, nullptr, &evOff.list);
+    off.runFor(0.1);
+    CHECK(off.runFor(0.2, NOTE16) < 1e-4f);           // all slots off: silent
 }
 
 static int coreTemps()

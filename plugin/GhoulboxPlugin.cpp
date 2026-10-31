@@ -34,7 +34,7 @@ public:
     GhoulboxPlugin() : Plugin(kParamCount, 0, 1), library_(Library::defaultPath())
     {
         for (uint32_t i = 0; i < kParamCount; i++)
-            param_[i] = i == kMaster ? 800.f : i == kHostSync ? 1.f : i >= kLayerFirst ? 0.f : -1.f;
+            param_[i] = i == kMaster ? 800.f : i == kHostSync ? 1.f : i == kLayerFirst ? 1.f : i > kLayerFirst ? 0.f : -1.f;
         dirty_ = (1ull << kMaster) | (1ull << kHostSync);
         events_.reserve(MAX_EVENTS);
         hostEvents_.reserve(MAX_EVENTS);
@@ -100,7 +100,7 @@ protected:
             p.hints |= kParameterIsBoolean;
             p.name = String("Track ") + String(i - kLayerFirst + 1) + " MIDI layer";   // (plays every MIDI note too)
             p.symbol = String("t") + String(i - kLayerFirst + 1) + "_layer";
-            p.ranges = ParameterRanges(0, 0, 1);
+            p.ranges = ParameterRanges(i == kLayerFirst ? 1 : 0, 0, 1);
         } else if (i >= kGlobalFirst) {
             const GlobalParam& g = GLOBAL_PARAMS[i - kGlobalFirst];
             const uint32_t n = g.names ? (uint32_t)(g.max - g.min + 1) : 0;
