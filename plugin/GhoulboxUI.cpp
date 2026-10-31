@@ -107,8 +107,7 @@ protected:
         drawKnobs();
         drawRight();
         drawEncoders();
-        drawTracks();
-        drawSteps();
+        drawSlots();
         restore();
     }
 
@@ -352,6 +351,8 @@ private:
 
     void say(float x, float y, const char* str, float size, const Color& c, int align, FontId font = -1)
     {
+        if (!str || !*str)
+            return;
         fontFaceId(font >= 0 ? font : text_);
         fontSize(size);
         fillColor(c);
@@ -392,10 +393,9 @@ private:
             if (c.first.ctl != Ctl::Button)
                 continue;
             const int b = c.first.idx;
-            const bool green = b == GB_BTN_PLAY && (view_->lit & kPlayGreen);
-            const bool lit = green || (view_->lit >> b & 1u), glow = view_->dim >> b & 1u;
+            const bool lit = view_->lit >> b & 1u, glow = view_->dim >> b & 1u;
             const bool held = latched_[b] || pressed_ == b || (keyButtons_ >> b & 1u);
-            box(c.second, green ? GREEN : lit ? AMBER : held ? STONE : PLAQUE,
+            box(c.second, lit ? AMBER : held ? STONE : PLAQUE,
                 latched_[b] ? EMBER : glow ? AMBER.withAlpha(0.5f) : STONE, latched_[b] ? 2 : 1);
             say(c.second.x + c.second.w / 2, c.second.y + c.second.h / 2 + 1, BTN_NAME[b], c.second.h > 30 ? 22 : 18,
                 lit ? NIGHT : BONE, ALIGN_CENTER | ALIGN_MIDDLE);
@@ -407,7 +407,7 @@ private:
     void drawPanels()
     {
         for (const Rect& r : {Rect{6, 52, 252, 652}, Rect{270, 52, 500, 652}, Rect{782, 52, 252, 652},
-                              Rect{6, 708, 398, 146}, Rect{408, 708, 626, 146}})
+                              Rect{6, 708, 1028, 146}})
             box(r, PLAQUE, FRAME, 1, 2);
     }
 
@@ -426,7 +426,7 @@ private:
             top_ = listTop(view_->sound_now, view_->nsounds, kSoundRows, top_);
             lastSoundNow_ = view_->sound_now;
         }
-        std::snprintf(b, sizeof b, "SOUNDS · TRACK %d", view_->sel + 1);
+        std::snprintf(b, sizeof b, "SOUNDS · SLOT %d", view_->sel + 1);
         heading(16, 56, b);
         const Rect list = rectOf(Hit{Ctl::SoundList, 0});
         for (int i = 0; i < kSoundRows && top_ + i < view_->nsounds; i++) {
@@ -492,41 +492,28 @@ private:
         knob(rectOf(Hit{Ctl::Master, 0}), param_[kMaster] / 1023.f, "VOL", b, drag_ == Hit{Ctl::Master, 0});
     }
 
-    void drawTracks()
+    void drawSlots()
     {
-        char b[16];
-        heading(16, 712, "TRACKS");
+        char b[32];
+        heading(16, 712, "SOUND SLOTS");
         for (int t = 0; t < 4; t++) {
             const Rect sel = rectOf(Hit{Ctl::TrackSel, t}), fad = rectOf(Hit{Ctl::Fader, t});
-            std::snprintf(b, sizeof b, "T%d", t + 1);
+            const Rect lay = rectOf(Hit{Ctl::Layer, t});
+            std::snprintf(b, sizeof b, "SLOT %d", t + 1);
             pill(sel, b, t == view_->sel);
-            std::snprintf(b, sizeof b, "%.9s", view_->track[t].sound);
-            say(sel.x + sel.w / 2, 766, b, 16, DIM, ALIGN_CENTER | ALIGN_MIDDLE);
+
+            const bool on = layerOn(t);
+            box(lay, on ? AMBER : PLAQUE, on ? AMBER : STONE, 1, 3);
+            say(lay.x + lay.w / 2, lay.y + lay.h / 2 + 1, on ? "ENABLED" : "OFF", 16, on ? NIGHT : DIM, ALIGN_CENTER | ALIGN_MIDDLE);
+
+            std::snprintf(b, sizeof b, "%.14s", view_->track[t].sound[0] ? view_->track[t].sound : "—");
+            say(sel.x + (lay.x + lay.w - sel.x) / 2, 772, b, 18, t == view_->sel ? BONE : DIM, ALIGN_CENTER | ALIGN_MIDDLE);
+
             const bool mute = view_->track[t].mute;
-            box(Rect{fad.x + 7, fad.y, 6, fad.h}, NIGHT, STONE, 1, 3);
+            box(Rect{fad.x + 9, fad.y, 6, fad.h}, NIGHT, STONE, 1, 3);
             const float y = fad.y + (1 - view_->track[t].level.pos / 127.f) * (fad.h - 10);
             box(Rect{fad.x, y, fad.w, 10}, mute ? STONE : drag_ == Hit{Ctl::Fader, t} ? AMBER : BONE, NIGHT, 1, 2);
-            const Rect lay = rectOf(Hit{Ctl::Layer, t});
-            box(lay, layerOn(t) ? AMBER : PLAQUE, layerOn(t) ? AMBER : STONE, 1, 3);
-            say(lay.x + lay.w / 2, lay.y + lay.h / 2 + 1, "MIDI", 14, layerOn(t) ? NIGHT : DIM, ALIGN_CENTER | ALIGN_MIDDLE);
-        }
-    }
-
-    void drawSteps()
-    {
-        char b[48];
-        const int first = view_->step_page * 16 + 1;
-        std::snprintf(b, sizeof b, "STEPS · TRACK %d · %d-%d", view_->sel + 1, first, first + 15);
-        heading(420, 712, b);
-        for (int i = 0; i < 16; i++) {
-            const Rect r = rectOf(Hit{Ctl::Step, i});
-            const bool on = view_->step[i].on, tie = view_->step[i].tie;
-            box(r, NIGHT, STONE, 1, 2);
-            if (on)
-                box(tie ? Rect{r.x + 3, r.y + r.h / 2, r.w - 6, r.h / 2 - 3} : Rect{r.x + 3, r.y + 3, r.w - 6, r.h - 6},
-                    AMBER, AMBER, 1, 2);
-            if (i == view_->step_now)
-                box(Rect{r.x, r.y + r.h + 4, r.w, 4}, EMBER, EMBER, 1, 1);
+            say(fad.x + fad.w / 2, fad.y + fad.h + 8, "VOL", 12, DIM, ALIGN_CENTER | ALIGN_TOP);
         }
     }
 

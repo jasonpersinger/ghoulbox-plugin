@@ -19,10 +19,10 @@ static void test_controls_complete()
     std::map<Ctl, int> n;
     for (auto& c : controls())
         n[c.first.ctl]++;
-    CHECK(n[Ctl::Button] == 14 && n[Ctl::Enc] == 7 && n[Ctl::Knob] == 4 && n[Ctl::Global] == 2);
-    CHECK(n[Ctl::Master] == 1 && n[Ctl::Fader] == 4 && n[Ctl::TrackSel] == 4 && n[Ctl::Step] == 16);
+    CHECK(n[Ctl::Button] == 10 && n[Ctl::Enc] == 7 && n[Ctl::Knob] == 4 && n[Ctl::Global] == 2);
+    CHECK(n[Ctl::Master] == 1 && n[Ctl::Fader] == 4 && n[Ctl::TrackSel] == 4 && n[Ctl::Step] == 0);
     CHECK(n[Ctl::Screen] == 1 && n[Ctl::SoundList] == 1);
-    CHECK(n[Ctl::Layer] == 4);                            // the tracks' MIDI layer toggles
+    CHECK(n[Ctl::Layer] == 4);                            // the slots' MIDI layer toggles
 }
 
 static void test_no_overlaps()
