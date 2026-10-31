@@ -21,9 +21,10 @@
 
 START_NAMESPACE_DISTRHO
 
-enum { kMaster, kHostSync, kTrackFirst, kTrackParams = 8, kGlobalFirst = kTrackFirst + 4 * kTrackParams,
-       kLayerFirst = kGlobalFirst + 2, kParamCount = kLayerFirst + 4 };   // 34: Reverb Type, 35: Tape, 36..39: layers
-static const struct { const char* name; const char* sym; uint8_t cc; } TRACK_PARAMS[kTrackParams] = {
+enum { kMaster = 0, kSlotFirst = 1, kSlotParams = 9, kSlotCCParams = 8,
+       kGlobalFirst = kSlotFirst + 4 * kSlotParams, kGlobalCount = 2,
+       kParamCount = kGlobalFirst + kGlobalCount };
+static const struct { const char* name; const char* sym; uint8_t cc; } SLOT_CC_PARAMS[kSlotCCParams] = {
     {"Level", "level", 7}, {"Pan", "pan", 10}, {"Reverb", "reverb", 91}, {"Delay", "delay", 94},
     {"Knob 1", "knob1", 21}, {"Knob 2", "knob2", 22}, {"Knob 3", "knob3", 23}, {"Knob 4", "knob4", 24},
 };
@@ -33,9 +34,19 @@ class GhoulboxPlugin : public Plugin {
 public:
     GhoulboxPlugin() : Plugin(kParamCount, 0, 1), library_(Library::defaultPath())
     {
-        for (uint32_t i = 0; i < kParamCount; i++)
-            param_[i] = i == kMaster ? 800.f : i == kHostSync ? 1.f : i == kLayerFirst ? 1.f : i > kLayerFirst ? 0.f : -1.f;
-        dirty_ = (1ull << kMaster) | (1ull << kHostSync);
+        for (uint32_t i = 0; i < kParamCount; i++) {
+            if (i == kMaster)
+                param_[i] = 800.f;
+            else if (i == kSlotFirst)
+                param_[i] = 1.f;
+            else if (i == kSlotFirst + 1 * kSlotParams ||
+                     i == kSlotFirst + 2 * kSlotParams ||
+                     i == kSlotFirst + 3 * kSlotParams)
+                param_[i] = 0.f;
+            else
+                param_[i] = -1.f;
+        }
+        dirty_ = 1ull << kMaster;
         events_.reserve(MAX_EVENTS);
         hostEvents_.reserve(MAX_EVENTS);
         layered_.reserve(MAX_EVENTS);
@@ -55,6 +66,7 @@ public:
         std::fill(img.begin() + privOff_, img.begin() + privOff_ + privLen_, 0xFF);   // music is its own
         api.nor_load(img.data(), (uint32_t)img.size());
         api.boot();
+        api.clock_external(true);
         snap_.resize(base_.size());
         engine_.reset(new Engine(std::move(core), getSampleRate()));
         bridge_.reset(new UiBridge());
@@ -91,23 +103,13 @@ protected:
             p.name = "Master";
             p.symbol = "master";
             p.ranges = ParameterRanges(800, 0, 1023);
-        } else if (i == kHostSync) {
-            p.hints |= kParameterIsBoolean;
-            p.name = "Host sync";
-            p.symbol = "host_sync";
-            p.ranges = ParameterRanges(1, 0, 1);
-        } else if (i >= kLayerFirst) {
-            p.hints |= kParameterIsBoolean;
-            p.name = String("Track ") + String(i - kLayerFirst + 1) + " MIDI layer";   // (plays every MIDI note too)
-            p.symbol = String("t") + String(i - kLayerFirst + 1) + "_layer";
-            p.ranges = ParameterRanges(i == kLayerFirst ? 1 : 0, 0, 1);
         } else if (i >= kGlobalFirst) {
             const GlobalParam& g = GLOBAL_PARAMS[i - kGlobalFirst];
             const uint32_t n = g.names ? (uint32_t)(g.max - g.min + 1) : 0;
             p.name = g.name;
             p.symbol = g.sym;
             p.ranges = ParameterRanges(-1, -1, g.max);
-            p.enumValues.count = 1 + n;                 // -1: unset, as the track params; then the firmware's names
+            p.enumValues.count = 1 + n;                 // -1: unset, as the slot params; then the firmware's names
             p.enumValues.restrictedMode = false;
             p.enumValues.values = new ParameterEnumerationValue[1 + n];
             p.enumValues.values[0].value = -1;
@@ -117,15 +119,24 @@ protected:
                 p.enumValues.values[1 + k].label = g.names[k];
             }
         } else {
-            const uint32_t t = (i - kTrackFirst) / kTrackParams, k = (i - kTrackFirst) % kTrackParams;
-            p.name = String("Track ") + String(t + 1) + " " + TRACK_PARAMS[k].name;
-            p.symbol = String("t") + String(t + 1) + "_" + TRACK_PARAMS[k].sym;
-            p.ranges = ParameterRanges(-1, -1, 127);
-            p.enumValues.count = 1;                     // -1: unset, the project's own value stands
-            p.enumValues.restrictedMode = false;
-            p.enumValues.values = new ParameterEnumerationValue[1];
-            p.enumValues.values[0].value = -1;
-            p.enumValues.values[0].label = "—";
+            const uint32_t rel = i - kSlotFirst;
+            const uint32_t t = rel / kSlotParams;
+            const uint32_t k = rel % kSlotParams;
+            if (k == 0) {
+                p.hints |= kParameterIsBoolean;
+                p.name = String("Slot ") + String(t + 1) + " Enabled";
+                p.symbol = String("s") + String(t + 1) + "_enabled";
+                p.ranges = ParameterRanges(t == 0 ? 1 : 0, 0, 1);
+            } else {
+                p.name = String("Slot ") + String(t + 1) + " " + SLOT_CC_PARAMS[k - 1].name;
+                p.symbol = String("s") + String(t + 1) + "_" + SLOT_CC_PARAMS[k - 1].sym;
+                p.ranges = ParameterRanges(-1, -1, 127);
+                p.enumValues.count = 1;                 // -1: unset, the project's own value stands
+                p.enumValues.restrictedMode = false;
+                p.enumValues.values = new ParameterEnumerationValue[1];
+                p.enumValues.values[0].value = -1;
+                p.enumValues.values[0].label = "—";
+            }
         }
     }
 
@@ -167,7 +178,7 @@ protected:
         std::vector<uint8_t> b = d_getChunkFromBase64String(value);
         std::lock_guard<std::mutex> g(coreMutex_);
         if (!b.empty() && api().state_load(b.data(), (uint32_t)b.size()))
-            dirty_ |= 1ull << kHostSync;               // the project's own CLOCK must not override Host sync
+            api().clock_external(true);
     }
 
     void activate() override { sampleRateChanged(getSampleRate()); }
@@ -191,8 +202,7 @@ protected:
         applyParams();
         bridge_->drain([this](const UiInput& in) { applyInput(in); });
         clockEvents_.clear();
-        if (param_[kHostSync] > 0.5f)
-            clock_.block(hostTime(), frames, getSampleRate(), clockEvents_);
+        clock_.block(hostTime(), frames, getSampleRate(), clockEvents_);
         mergeEvents(midi, nmidi);
         engine_->process(out[0], out[1], frames, events_.data(), (uint32_t)events_.size());
         if (bridge_->due(frames, getSampleRate())) {     // (a window is open: its view, ~60 times a second)
@@ -217,17 +227,19 @@ private:
             const float v = param_[i];
             if (i == kMaster)
                 api().master((uint32_t)std::lround(v));
-            else if (i == kHostSync) {
-                api().clock_external(v > 0.5f);
-                clock_.reset();
-            } else if (i >= kLayerFirst) {
-                                                        // (read in run: layerMask)
-            } else if (i >= kGlobalFirst) {
+            else if (i >= kGlobalFirst) {
                 if (v >= 0)
                     api().global_set(GLOBAL_PARAMS[i - kGlobalFirst].gb, (int32_t)std::lround(v));
-            } else if (v >= 0)
-                api().track_cc((i - kTrackFirst) / kTrackParams, TRACK_PARAMS[(i - kTrackFirst) % kTrackParams].cc,
-                               (uint8_t)std::lround(v));
+            } else {
+                const uint32_t rel = i - kSlotFirst;
+                const uint32_t t = rel / kSlotParams;
+                const uint32_t k = rel % kSlotParams;
+                if (k == 0) {
+                    // slot enabled: read in layerMask()
+                } else if (v >= 0) {
+                    api().track_cc(t, SLOT_CC_PARAMS[k - 1].cc, (uint8_t)std::lround(v));
+                }
+            }
         }
     }
 
@@ -253,11 +265,11 @@ private:
                         b.beatsPerMinute};
     }
 
-    uint32_t layerMask() const                          // the lit "Track N MIDI layer" toggles
+    uint32_t layerMask() const                          // the enabled slot toggles
     {
         uint32_t m = 0;
         for (uint32_t t = 0; t < 4; t++)
-            m |= (param_[kLayerFirst + t] > 0.5f ? 1u : 0u) << t;
+            m |= (param_[kSlotFirst + t * kSlotParams] > 0.5f ? 1u : 0u) << t;
         return m;
     }
 

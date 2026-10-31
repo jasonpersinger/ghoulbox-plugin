@@ -292,28 +292,49 @@ static void test_missing_core_keeps_state()
     CHECK(project(n.save()) == project(s));           /* what it was given, given back */
 }
 
-/* Plan 2: params 0..33 are Plan 1's, in order (saved projects find their values by index); 34..39 are new */
-static void test_param_ids_append_only()
+/* Plan 3: clean parameter list (39 parameters: Master, 4x9 Slot params, Reverb Type, Tape) */
+static void test_param_list()
 {
     Inst a;
     CHECK(a.p);
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
-    CHECK(pa && pa->count(a.p) == 40);
-    std::vector<std::string> want = {"Master", "Host sync"};
-    for (int t = 1; t <= 4; t++)
+    CHECK(pa && pa->count(a.p) == 39);
+    std::vector<std::string> want = {"Master"};
+    for (int t = 1; t <= 4; t++) {
+        want.push_back("Slot " + std::to_string(t) + " Enabled");
         for (const char* k : {"Level", "Pan", "Reverb", "Delay", "Knob 1", "Knob 2", "Knob 3", "Knob 4"})
-            want.push_back("Track " + std::to_string(t) + " " + k);
+            want.push_back("Slot " + std::to_string(t) + " " + k);
+    }
     for (const char* k : {"Reverb Type", "Tape"})
         want.push_back(k);
-    for (int t = 1; t <= 4; t++)
-        want.push_back("Track " + std::to_string(t) + " MIDI layer");
-    for (uint32_t i = 0; i < 40; i++) {
+    for (uint32_t i = 0; i < 39; i++) {
         clap_param_info_t info{};
         CHECK(pa->get_info(a.p, i, &info));
         if (want[i] != info.name)
             std::fprintf(stderr, "  param %u: %s, want %s\n", i, info.name, want[i].c_str());
         CHECK(want[i] == info.name);
     }
+
+    // Check defaults and ranges
+    clap_param_info_t info{};
+    CHECK(pa->get_info(a.p, 0, &info));
+    CHECK(info.default_value == 800 && info.min_value == 0 && info.max_value == 1023);
+
+    for (int t = 0; t < 4; t++) {
+        CHECK(pa->get_info(a.p, 1 + t * 9, &info));
+        CHECK(info.default_value == (t == 0 ? 1.0 : 0.0) && info.min_value == 0 && info.max_value == 1);
+        CHECK((info.flags & CLAP_PARAM_IS_STEPPED) != 0);
+
+        for (int k = 1; k < 9; k++) {
+            CHECK(pa->get_info(a.p, 1 + t * 9 + k, &info));
+            CHECK(info.default_value == -1.0 && info.min_value == -1 && info.max_value == 127);
+        }
+    }
+
+    CHECK(pa->get_info(a.p, 37, &info));
+    CHECK(info.default_value == -1.0 && info.min_value == -1 && info.max_value == 2);
+    CHECK(pa->get_info(a.p, 38, &info));
+    CHECK(info.default_value == -1.0 && info.min_value == -1 && info.max_value == 127);
 }
 
 /* A global parameter (Reverb Type / Tape) reaches the music (the project's state changes) */
@@ -323,7 +344,7 @@ static void test_global_param_changes_state()
     CHECK(a.p);
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
     clap_param_info_t info{};
-    CHECK(pa && pa->get_info(a.p, 34, &info));         /* param 34: Reverb Type */
+    CHECK(pa && pa->get_info(a.p, 37, &info));         /* param 37: Reverb Type */
     a.runFor(0.1);
     const std::string before = project(a.save());
     struct P {
@@ -394,7 +415,7 @@ static void test_layer_plays_any_channel()
     CHECK(on.runFor(0.2, NOTE16) > 0.01f);             // slot 1 is enabled by default: plays
 
     MixedEvents evBoth;
-    evBoth.param(paramId(on, 38), 1);                 // enable slot 3 as well
+    evBoth.param(paramId(on, 19), 1);                // enable slot 3 as well (param 1 + 2*9 = 19)
     evBoth.midi(NOTE16);
     on.run(512, nullptr, &evBoth.list);
     CHECK(on.runFor(0.2) > 0.01f);
@@ -403,7 +424,7 @@ static void test_layer_plays_any_channel()
     CHECK(off.p);
     off.runFor(0.1);
     MixedEvents evOff;
-    evOff.param(paramId(off, 36), 0);                 // disable slot 1 (all slots off)
+    evOff.param(paramId(off, 1), 0);                  // disable slot 1 (param 1)
     off.run(512, nullptr, &evOff.list);
     off.runFor(0.1);
     CHECK(off.runFor(0.2, NOTE16) < 1e-4f);           // all slots off: silent
@@ -453,7 +474,7 @@ int main()
         {"test_autosave_stays_private", test_autosave_stays_private},
         {"test_missing_core_keeps_state", test_missing_core_keeps_state},
         {"test_no_temp_leftovers", test_no_temp_leftovers},
-        {"test_param_ids_append_only", test_param_ids_append_only},
+        {"test_param_list", test_param_list},
         {"test_global_param_changes_state", test_global_param_changes_state},
         {"test_gui_extension", test_gui_extension},
         {"test_layer_plays_any_channel", test_layer_plays_any_channel},

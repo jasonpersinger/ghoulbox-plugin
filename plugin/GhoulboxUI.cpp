@@ -29,9 +29,9 @@ const char* const ENC_NAME[GB_NENC] = {"SELECT", "ALGO", "PRESETS", "K1", "K2", 
 constexpr float kEncStepPx = 12;                         // a vertical drag of 12 px: one encoder step
 constexpr uint32_t kPlayGreen = 1u << 14;                // web_lit_buttons: PLAY's green
 /* the plugin's parameter ids (plugin/GhoulboxPlugin.cpp: append-only) */
-constexpr uint32_t kMaster = 0, kHostSync = 1, kTrackFirst = 2, kTrackParams = 8, kGlobalFirst = 34,
-                   kGlobalCount = 2, kLayerFirst = kGlobalFirst + kGlobalCount, kParams = kLayerFirst + 4;
-constexpr uint32_t trackParam(uint32_t t, uint32_t k) { return kTrackFirst + t * kTrackParams + k; }   // k: 0 Level, 4.. Knob
+constexpr uint32_t kMaster = 0, kSlotFirst = 1, kSlotParams = 9, kGlobalFirst = kSlotFirst + 4 * kSlotParams,
+                   kGlobalCount = 2, kParams = kGlobalFirst + kGlobalCount;
+constexpr uint32_t slotParam(uint32_t t, uint32_t k) { return kSlotFirst + t * kSlotParams + k; }
 bool isPill(int g) { return g == 0; }
 }
 
@@ -155,8 +155,8 @@ protected:
         case Ctl::TrackSel:
             push(UiInput::Track, h.idx, 0);
             break;
-        case Ctl::Layer:                                // every MIDI note also plays this track
-            setParam(kLayerFirst + (uint32_t)h.idx, layerOn(h.idx) ? 0.f : 1.f);
+        case Ctl::Layer:                                // every MIDI note also plays this slot
+            setParam(slotParam((uint32_t)h.idx, 0), layerOn(h.idx) ? 0.f : 1.f);
             break;
         case Ctl::Global:
             if (isPill(h.idx)) {
@@ -277,8 +277,8 @@ private:
     {
         const uint32_t sel = view_->sel % 4;
         switch (h.ctl) {
-        case Ctl::Knob: return {trackParam(sel, 4 + (uint32_t)h.idx), 0, 127, (float)view_->knob[h.idx].pos};
-        case Ctl::Fader: return {trackParam((uint32_t)h.idx, 0), 0, 127, (float)view_->track[h.idx].level.pos};
+        case Ctl::Knob: return {slotParam(sel, 5 + (uint32_t)h.idx), 0, 127, (float)view_->knob[h.idx].pos};
+        case Ctl::Fader: return {slotParam((uint32_t)h.idx, 1), 0, 127, (float)view_->track[h.idx].level.pos};
         case Ctl::Global: {
             const GlobalParam& g = GLOBAL_PARAMS[h.idx];
             return {kGlobalFirst + (uint32_t)h.idx, (float)g.min, (float)g.max, (float)view_->global[g.gb].value};
@@ -297,7 +297,7 @@ private:
         repaint();
     }
 
-    bool layerOn(int t) const { return param_[kLayerFirst + (uint32_t)t] > 0.5f; }
+    bool layerOn(int t) const { return param_[slotParam((uint32_t)t, 0)] > 0.5f; }
 
     void touched(uint32_t id) { lastSet_[id] = std::chrono::steady_clock::now(); }
 
@@ -316,11 +316,11 @@ private:
         const uint32_t sel = view_->sel % 4;
         for (uint32_t k = 0; k < 4; k++) {
             const gb_ctl& c = view_->knob[k];
-            release(trackParam(sel, 4 + k), ccParamStale(param_[trackParam(sel, 4 + k)], c.pos, c.max - c.min));
+            release(slotParam(sel, 5 + k), ccParamStale(param_[slotParam(sel, 5 + k)], c.pos, c.max - c.min));
         }
         for (uint32_t t = 0; t < 4; t++) {
             const gb_ctl& c = view_->track[t].level;
-            release(trackParam(t, 0), ccParamStale(param_[trackParam(t, 0)], c.pos, c.max - c.min));
+            release(slotParam(t, 1), ccParamStale(param_[slotParam(t, 1)], c.pos, c.max - c.min));
         }
         for (uint32_t g = 0; g < kGlobalCount; g++) {
             const GlobalParam& gp = GLOBAL_PARAMS[g];
@@ -415,9 +415,8 @@ private:
     {
         char b[96];
         say(16, 26, "GHOULBOX", 36, AMBER, ALIGN_LEFT | ALIGN_MIDDLE, mark_);
-        std::snprintf(b, sizeof b, "%s  ·  %d BPM  ·  %s", view_->playing ? "PLAYING" : "STOPPED", (int)view_->bpm,
-                      param_[kHostSync] > 0.5f ? "SYNCED" : "INTERNAL");
-        say(kW - 16, 26, b, 22, view_->playing ? BONE : DIM, ALIGN_RIGHT | ALIGN_MIDDLE);
+        std::snprintf(b, sizeof b, "%d BPM", (int)view_->bpm);
+        say(kW - 16, 26, b, 22, BONE, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
 
     void drawSounds()
