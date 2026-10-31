@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-VERSION := 0.1.0
+VERSION := 0.2.0
 FEL := external/Felucca
 GEN := $(FEL)/build/gen
 # as native_check (the Global Constraints): the firmware compiled unmodified

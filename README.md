@@ -1,6 +1,7 @@
 # GHOULBOX plugin (private until 1.0)
 
-GHOULBOX as a CLAP / VST3 / LV2 instrument. GPL-3.0-only. **Local git only, no remote, until the 1.0 release.**
+GHOULBOX as a CLAP / VST3 / LV2 DAW instrument (v0.2.0). GPL-3.0-only. **Local git only, no remote, until the 1.0 release.**
+Features 4 layered sound slots per instance played simultaneously from MIDI, live firmware screen, sound browser, and full sound-shaping controls. No built-in sequencer or autonomous playback.
 
 Design: `~/projects/ghoulbox-plugin-design/2026-10-22-ghoulbox-plugin-design.md`. Plans: `~/projects/ghoulbox-plugin-design/plans/`.
 

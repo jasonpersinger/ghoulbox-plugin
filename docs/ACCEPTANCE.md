@@ -59,3 +59,15 @@ Known limits of the window:
 **2026-10-30:** the owner waived the remaining checks of both lists ("no worries on any of these, proceed"), after
 playing GHOULBOX in REAPER with the window and MIDI layering working. The unfilled rows were not run; they stay here
 as the checklist for any regression later.
+
+## Version 0.2.0: Plain DAW Instrument
+
+Use the **CLAPi** version in REAPER. Version 0.2.0 turns GHOULBOX into a focused DAW instrument with 4 layered sound slots, removing the internal groovebox sequencer and DREAM mode.
+
+| # | Step | Pass when | Result | Notes |
+|---|------|-----------|--------|-------|
+| 1 | Insert GHOULBOX (CLAP) on a fresh track. Start REAPER transport playback with no MIDI on the track. | Completely silent; no music or patterns play autonomously. | | |
+| 2 | Play MIDI notes on any MIDI channel. | Plays Slot 1's sound cleanly; notes sound as expected. | | |
+| 3 | In the window, toggle Slot 2 to ENABLED. Play notes again. | Both Slot 1 and Slot 2 play together stacked in unison. | | |
+| 4 | Tweak KNOB 1–4, level faders, reverb type, or tape in the window while playing. | Sound-shaping changes are immediately audible and responsive. | | |
+| 5 | Save the REAPER project, close REAPER, and reopen the project. | Restored accurately: same slot sounds, enable states, knob positions, and settings. | | |

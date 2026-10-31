@@ -93,7 +93,7 @@ protected:
     const char* getMaker() const override { return DISTRHO_PLUGIN_BRAND; }
     const char* getHomePage() const override { return "https://ghoulbox.messy.quest"; }
     const char* getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 1, 0); }
+    uint32_t getVersion() const override { return d_version(0, 2, 0); }
     int64_t getUniqueId() const override { return d_cconst('G', 'h', 'B', 'x'); }
 
     void initParameter(uint32_t i, Parameter& p) override
