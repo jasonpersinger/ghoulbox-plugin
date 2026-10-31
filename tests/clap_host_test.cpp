@@ -59,7 +59,8 @@ struct Inst {
         }
     }
     /* n frames (one block); its peak. midi: one message at frame 0 */
-    float run(uint32_t n, const uint8_t* midi = nullptr, const clap_input_events_t* extra = nullptr)
+    float run(uint32_t n, const uint8_t* midi = nullptr, const clap_input_events_t* extra = nullptr,
+              bool transportPlaying = false, double bpm = 120.0)
     {
         std::vector<float> l(n), r(n);
         float* ch[2] = {l.data(), r.data()};
@@ -73,9 +74,17 @@ struct Inst {
             std::memcpy(e.data, midi, 3);
             in.ev.push_back(e);
         }
+        clap_event_transport_t tr{};
+        tr.header = {sizeof tr, 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, 0};
+        tr.flags = transportPlaying ? CLAP_TRANSPORT_IS_PLAYING : 0;
+        tr.song_pos_beats = (clap_beattime)(t * bpm / (60.0 * RATE) * CLAP_BEATTIME_FACTOR);
+        tr.tempo = bpm;
+        tr.tsig_num = 4;
+        tr.tsig_denom = 4;
         clap_process_t pr{};
         pr.steady_time = (int64_t)t;
         pr.frames_count = n;
+        pr.transport = &tr;
         pr.audio_outputs = &out;
         pr.audio_outputs_count = 1;
         pr.in_events = extra ? extra : &in.list;
@@ -87,11 +96,11 @@ struct Inst {
             pk = std::max(pk, std::max(std::fabs(l[i]), std::fabs(r[i])));
         return pk;
     }
-    float runFor(double s, const uint8_t* midi = nullptr)
+    float runFor(double s, const uint8_t* midi = nullptr, bool transportPlaying = false, double bpm = 120.0)
     {
-        float pk = run(512, midi);
+        float pk = run(512, midi, nullptr, transportPlaying, bpm);
         for (uint32_t k = 512; k < s * RATE; k += 4096)
-            pk = std::max(pk, run(4096));
+            pk = std::max(pk, run(4096, nullptr, nullptr, transportPlaying, bpm));
         return pk;
     }
     std::string save()
@@ -143,6 +152,17 @@ static void test_plays_a_note()
     CHECK(a.p);
     CHECK(a.runFor(0.1) < 1e-4f);                     /* no splash noise on insert */
     CHECK(a.runFor(0.2, NOTE_ON) > 0.01f);
+}
+
+static void test_fresh_transport_silent()
+{
+    Inst a;
+    CHECK(a.p);
+    /* 2 seconds of transport playing with no MIDI notes: peak output stays at tape noise floor
+     * (default TAPE 40 hiss peak is 5.95e-5 = -84.5 dBFS; no notes or patterns sound) */
+    CHECK(a.runFor(2.0, nullptr, true, 120.0) < 6e-5f);
+    /* Then one note on sounds */
+    CHECK(a.runFor(0.2, NOTE_ON, true, 120.0) > 0.01f);
 }
 
 static void test_two_instances_apart()
@@ -417,6 +437,7 @@ int main()
     }
     struct { const char* name; void (*fn)(); } t[] = {
         {"test_plays_a_note", test_plays_a_note},
+        {"test_fresh_transport_silent", test_fresh_transport_silent},
         {"test_two_instances_apart", test_two_instances_apart},
         {"test_state_roundtrip", test_state_roundtrip},
         {"test_state_rejects_garbage", test_state_rejects_garbage},

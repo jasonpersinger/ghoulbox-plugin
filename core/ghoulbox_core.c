@@ -70,9 +70,20 @@ void gb_nor_private(uint32_t *off, uint32_t *len)       /* storage.c: the autosa
 
 void gb_boot(void)
 {
+    uint32_t t;
     web_boot();
+    for (t = 0; t < NTRK; t++)
+        track_defaults_steps(&trk[t]);
+    song.playing = 0;
+    song.rec = 0;
+    transport_req = 0;
     while (web_now_ms() < GB_BOOT_MS)
         web_render(64);
+    for (t = 0; t < NTRK; t++)
+        track_defaults_steps(&trk[t]);
+    song.playing = 0;
+    song.rec = 0;
+    transport_req = 0;
     usb.config = 1;                             /* the header's battery: external power (ui_draw.c batt_shown) */
 }
 
@@ -113,10 +124,19 @@ uint32_t gb_state_save(uint8_t *out, uint32_t cap)
 }
 int gb_state_load(const uint8_t *in, uint32_t n)
 {
+    uint32_t t;
     if (n > web_project_import_capacity())
         return 0;
     memcpy(web_project_import_buffer(), in, n);
-    return web_project_restore(n) != 0;
+    if (!web_project_restore(n))
+        return 0;
+    for (t = 0; t < NTRK; t++)
+        track_defaults_steps(&trk[t]);
+    song.playing = 0;
+    song.rec = 0;
+    song.g[G_DREAM] = 0;
+    transport_req = 0;
+    return 1;
 }
 uint32_t gb_playing(void) { return web_playing(); }
 

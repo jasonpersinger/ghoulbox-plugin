@@ -31,6 +31,19 @@ static uint8_t *shared;                             /* a page the forks share (t
 
 static void test_boot_silent(void) { fresh(); CHECK(peak(4410) < 1e-4f); }
 
+static void test_boot_clean_patterns(void)
+{
+    gb_view v;
+    uint32_t t, k;
+    fresh();
+    for (t = 0; t < 4; t++) {
+        gb_track_select(t);
+        gb_view_read(&v);
+        for (k = 0; k < 16; k++)
+            CHECK(!v.step[k].on);
+    }
+}
+
 static void test_note_sounds(void)
 {
     fresh();
@@ -331,6 +344,7 @@ int main(void)
     int f = 0;
     shared = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     f += run("test_boot_silent", test_boot_silent);
+    f += run("test_boot_clean_patterns", test_boot_clean_patterns);
     f += run("test_note_sounds", test_note_sounds);
     f += run("test_state_roundtrip (save)", roundtrip_save);
     f += run("test_state_roundtrip (fresh process: load, re-save)", roundtrip_load);
