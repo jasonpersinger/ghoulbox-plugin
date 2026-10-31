@@ -89,7 +89,7 @@ void gb_boot(void)
 
 uint32_t gb_midi(uint8_t status, uint8_t d1, uint8_t d2)
 {
-    if (status == 0xF8u || status == 0xFAu || status == 0xFBu || status == 0xFCu)
+    if (status == 0xF8u)
         return (uint32_t)midi_enqueue(0xFu | (uint32_t)status << 8, 1u);     /* usb.c's path for a real-time byte */
     if (status < 0x80u || status >= 0xF0u)
         return 1;
@@ -138,7 +138,7 @@ int gb_state_load(const uint8_t *in, uint32_t n)
     transport_req = 0;
     return 1;
 }
-uint32_t gb_playing(void) { return web_playing(); }
+uint32_t gb_playing(void) { return 0; }
 
 /* ------------------------------------------------- the window (Plan 2) --- */
 static const uint8_t GB_G_ID[GB_NG] = {G_DREAM, G_DDENS, G_DDRFT, G_DMOOD, G_RTYPE, G_TAPE};
@@ -202,7 +202,7 @@ void gb_view_read(gb_view *v)
     v->lit = web_lit_buttons();
     v->dim = web_dim_buttons();
     v->sel = song.sel;
-    v->playing = song.playing;
+    v->playing = 0;
     v->bpm = song.g[G_BPM];
     for (t = 0; t < NTRK; t++) {
         const track_t *x = &trk[t];
@@ -217,12 +217,11 @@ void gb_view_read(gb_view *v)
     }
     for (k = 0; k < GB_NG; k++)
         gb_ctl_fill(&v->global[k], &GP[GB_G_ID[k]], song.g[GB_G_ID[k]]);
-    v->step_page = song.playing ? (uint8_t)((s->seq_idx % NSTEP) / 16u) : 0;
-    v->step_now = song.playing ? (uint8_t)(s->seq_idx % 16u) : 255;
+    v->step_page = 0;
+    v->step_now = 255;
     for (k = 0; k < 16u; k++) {
-        const step_t *st = &s->step[v->step_page * 16u + k];
-        v->step[k].on = st->time != ST_REST && (st->n || st->hit);
-        v->step[k].tie = st->time == ST_TIE;
+        v->step[k].on = 0;
+        v->step[k].tie = 0;
     }
     cur = preset_all_pos(&total);
     if (total > GB_SOUNDS_MAX)
@@ -239,7 +238,7 @@ const uint16_t *gb_screen(void) { return web_screen(); }
 
 void gb_button(uint32_t b, int down)
 {
-    if (b >= GB_NBTN)
+    if (b >= GB_NBTN || b == GB_BTN_PLAY || b == GB_BTN_REC || b == GB_BTN_SEQ)
         return;
     gb_late_btn &= ~(1u << b);
     if (down) {

@@ -132,12 +132,49 @@ static void test_clock_follows(void)
         at += m;
         CHECK(gb_midi(0xF8, 0, 0) == 1);
         next += pulse;
-        if (at > MS(100))
-            CHECK(gb_playing() == 1);
+        CHECK(gb_playing() == 0);                   /* transport start FA does not start sequencer */
     }
     CHECK(gb_midi(0xFC, 0, 0) == 1);
     peak(MS(50));
     CHECK(gb_playing() == 0);
+}
+
+static void test_no_sequencer(void)
+{
+    gb_view v;
+    uint32_t i;
+    fresh();
+    gb_clock_external(1);
+    gb_button(GB_BTN_PLAY, 1);
+    peak(MS(20));
+    CHECK(fm1_in.buttons == 0);
+    gb_button(GB_BTN_PLAY, 0);
+    peak(MS(20));
+    CHECK(gb_playing() == 0);
+
+    gb_button(GB_BTN_REC, 1);
+    peak(MS(20));
+    CHECK(fm1_in.buttons == 0);
+    gb_button(GB_BTN_REC, 0);
+    CHECK(song.rec == 0);
+
+    gb_button(GB_BTN_SEQ, 1);
+    peak(MS(20));
+    CHECK(fm1_in.buttons == 0);
+    gb_button(GB_BTN_SEQ, 0);
+
+    /* Transport running and notes held: gb_view.playing stays 0 and no steps fire */
+    gb_midi(0xFA, 0, 0);
+    gb_midi(0x90, 60, 100);
+    for (i = 0; i < 48; i++) {
+        gb_midi(0xF8, 0, 0);
+        peak(MS(10));
+    }
+    gb_view_read(&v);
+    CHECK(v.playing == 0);
+    CHECK(gb_playing() == 0);
+    for (i = 0; i < 16; i++)
+        CHECK(!v.step[i].on);
 }
 
 /* the autosave (a change, then 10 s quiet) writes the flash only inside gb_nor_private's span */
@@ -258,10 +295,10 @@ static void test_global_set(void)
 static void test_buttons_and_track_select(void)
 {
     fresh();
-    gb_button(GB_BTN_SEQ, 1);
+    gb_button(GB_BTN_FX, 1);
     peak(MS(20));
-    CHECK(fm1_in.buttons == 1u << panel.btn[B_SEQ]);
-    gb_button(GB_BTN_SEQ, 0);
+    CHECK(fm1_in.buttons == 1u << panel.btn[B_FX]);
+    gb_button(GB_BTN_FX, 0);
     peak(MS(20));
     CHECK(fm1_in.buttons == 0);
     gb_track_select(2);
@@ -351,6 +388,7 @@ int main(void)
     f += run("test_state_rejects_garbage", test_state_rejects_garbage);
     f += run("test_track_cc", test_track_cc);
     f += run("test_clock_follows", test_clock_follows);
+    f += run("test_no_sequencer", test_no_sequencer);
     f += run("test_autosave_within_private", test_autosave_within_private);
     f += run("test_calibration_refused", test_calibration_refused);
     f += run("test_battery_external", test_battery_external);
