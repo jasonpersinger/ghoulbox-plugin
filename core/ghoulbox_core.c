@@ -11,7 +11,22 @@ static void gb_calibration_refused(void);
 #define GB_PS_void gb_fw_panel_setup(void)
 #define GB_PS_ gb_calibration_refused()
 #define panel_setup(...) GB_PS_ ## __VA_ARGS__
+
+#define GB_DK_void gb_fw_dream_keys_on(void)
+#define GB_DK_ 0
+#define dream_keys_on(...) GB_DK_ ## __VA_ARGS__
+
+#define GB_DT_void gb_fw_dream_tick(void)
+#define GB_DT_ ((void)0)
+#define dream_tick(...) GB_DT_ ## __VA_ARGS__
+
 #include "web/emu/felucca_web.c"
+#undef dream_tick
+#undef GB_DT_
+#undef GB_DT_void
+#undef dream_keys_on
+#undef GB_DK_
+#undef GB_DK_void
 #undef panel_setup
 #undef GB_PS_
 #undef GB_PS_void
@@ -304,7 +319,7 @@ int32_t gb_midi_base(void) { return midi_base(); }   /* seq.c: G_ROUTE's block *
 int gb_global_set(uint32_t g, int32_t v)            /* midi_cc_apply's MC_G, with the value itself */
 {
     const param_desc_t *d;
-    if (g >= GB_NG)
+    if (g < 4 || g >= GB_NG)
         return 0;
     d = &GP[GB_G_ID[g]];
     song.g[GB_G_ID[g]] = (int16_t)(v < d->min ? d->min : v > d->max ? d->max : v);

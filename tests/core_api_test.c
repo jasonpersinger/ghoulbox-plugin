@@ -283,13 +283,31 @@ static void test_knob_pos_roundtrip(void)
 static void test_global_set(void)
 {
     fresh();
-    CHECK(gb_global_set(GB_G_DENS, 99) == 1);
+    CHECK(gb_global_set(GB_G_RTYPE, 1) == 1);
     gb_view_read(&v);
-    CHECK(v.global[GB_G_DENS].value == 8);
-    CHECK(gb_global_set(GB_G_MOOD, 2) == 1);
+    CHECK(v.global[GB_G_RTYPE].value == 1);
+    CHECK(gb_global_set(GB_G_TAPE, 80) == 1);
     gb_view_read(&v);
-    CHECK(strcmp(v.global[GB_G_MOOD].text, "PHRY") == 0);
+    CHECK(v.global[GB_G_TAPE].value == 80);
     CHECK(gb_global_set(GB_NG, 0) == 0);
+}
+
+static void test_no_dream(void)
+{
+    fresh();
+    /* Cannot turn on through gb_global_set */
+    CHECK(gb_global_set(GB_G_EVOL, 1) == 0);
+    CHECK(gb_global_set(GB_G_DENS, 4) == 0);
+    CHECK(gb_global_set(GB_G_DRFT, 4) == 0);
+    CHECK(gb_global_set(GB_G_MOOD, 2) == 0);
+    CHECK(song.g[G_DREAM] == 0);
+
+    /* Restoring state never leaves DREAM on */
+    song.g[G_DREAM] = 1;
+    uint32_t n = gb_state_save(blob, sizeof blob);
+    fresh();
+    CHECK(gb_state_load(blob, n) == 1);
+    CHECK(song.g[G_DREAM] == 0);
 }
 
 static void test_buttons_and_track_select(void)
@@ -396,6 +414,7 @@ int main(void)
     f += run("test_sound_load", test_sound_load);
     f += run("test_knob_pos_roundtrip", test_knob_pos_roundtrip);
     f += run("test_global_set", test_global_set);
+    f += run("test_no_dream", test_no_dream);
     f += run("test_buttons_and_track_select", test_buttons_and_track_select);
     f += run("test_quick_tap_reaches_firmware", test_quick_tap_reaches_firmware);
     f += run("test_quick_key_plays", test_quick_key_plays);

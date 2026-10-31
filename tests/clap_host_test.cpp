@@ -298,16 +298,16 @@ static void test_param_ids_append_only()
     Inst a;
     CHECK(a.p);
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
-    CHECK(pa && pa->count(a.p) == 44);
+    CHECK(pa && pa->count(a.p) == 40);
     std::vector<std::string> want = {"Master", "Host sync"};
     for (int t = 1; t <= 4; t++)
         for (const char* k : {"Level", "Pan", "Reverb", "Delay", "Knob 1", "Knob 2", "Knob 3", "Knob 4"})
             want.push_back("Track " + std::to_string(t) + " " + k);
-    for (const char* k : {"Dream Evolve", "Dream Density", "Dream Drift", "Dream Mood", "Reverb Type", "Tape"})
+    for (const char* k : {"Reverb Type", "Tape"})
         want.push_back(k);
     for (int t = 1; t <= 4; t++)
         want.push_back("Track " + std::to_string(t) + " MIDI layer");
-    for (uint32_t i = 0; i < 44; i++) {
+    for (uint32_t i = 0; i < 40; i++) {
         clap_param_info_t info{};
         CHECK(pa->get_info(a.p, i, &info));
         if (want[i] != info.name)
@@ -316,14 +316,14 @@ static void test_param_ids_append_only()
     }
 }
 
-/* Plan 2: a DREAM parameter reaches the music (the project's state changes) */
+/* A global parameter (Reverb Type / Tape) reaches the music (the project's state changes) */
 static void test_global_param_changes_state()
 {
     Inst a;
     CHECK(a.p);
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
     clap_param_info_t info{};
-    CHECK(pa && pa->get_info(a.p, 35, &info));
+    CHECK(pa && pa->get_info(a.p, 34, &info));         /* param 34: Reverb Type */
     a.runFor(0.1);
     const std::string before = project(a.save());
     struct P {
@@ -335,7 +335,7 @@ static void test_global_param_changes_state()
     ev.e.param_id = info.id;
     ev.e.note_id = -1;
     ev.e.port_index = ev.e.channel = ev.e.key = -1;
-    ev.e.value = 2;
+    ev.e.value = 1;                                     /* SPRING */
     a.run(512, nullptr, &ev.list);
     a.runFor(0.1);
     const std::string after = project(a.save());
@@ -394,8 +394,8 @@ static void test_layer_plays_any_channel()
     on.runFor(0.1);
     CHECK(off.runFor(0.2, NOTE16) < 1e-3f);             // no layer: channel 16 is dropped, as on the hardware
     MixedEvents ev;
-    ev.param(paramId(on, 40), 1);
-    ev.param(paramId(on, 41), 1);
+    ev.param(paramId(on, 36), 1);
+    ev.param(paramId(on, 37), 1);
     ev.midi(NOTE16);
     on.run(512, nullptr, &ev.list);
     CHECK(on.runFor(0.2) > 0.01f);

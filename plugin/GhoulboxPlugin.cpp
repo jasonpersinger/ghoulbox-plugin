@@ -22,7 +22,7 @@
 START_NAMESPACE_DISTRHO
 
 enum { kMaster, kHostSync, kTrackFirst, kTrackParams = 8, kGlobalFirst = kTrackFirst + 4 * kTrackParams,
-       kLayerFirst = kGlobalFirst + 6, kParamCount = kLayerFirst + 4 };   // ids are append-only: saved projects find their values by index
+       kLayerFirst = kGlobalFirst + 2, kParamCount = kLayerFirst + 4 };   // 34: Reverb Type, 35: Tape, 36..39: layers
 static const struct { const char* name; const char* sym; uint8_t cc; } TRACK_PARAMS[kTrackParams] = {
     {"Level", "level", 7}, {"Pan", "pan", 10}, {"Reverb", "reverb", 91}, {"Delay", "delay", 94},
     {"Knob 1", "knob1", 21}, {"Knob 2", "knob2", 22}, {"Knob 3", "knob3", 23}, {"Knob 4", "knob4", 24},

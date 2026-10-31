@@ -20,12 +20,8 @@ static std::vector<std::pair<Hit, Rect>> build()
         add(Ctl::Button, ROW2[i], {280 + i * (54 + 48.f / 7), 592, 54, 28});
     for (int k = 0; k < 4; k++)
         add(Ctl::Knob, k, {310 + k * 120.f, 644, 60, 56});
-    add(Ctl::Global, GB_G_EVOL, {800, 90, 96, 28});                     // DREAM: EVOL a pill, then DENS DRFT MOOD
-    add(Ctl::Global, GB_G_DENS, {938, 76, 60, 56});
-    add(Ctl::Global, GB_G_DRFT, {818, 136, 60, 56});
-    add(Ctl::Global, GB_G_MOOD, {938, 136, 60, 56});
-    add(Ctl::Global, GB_G_RTYPE, {800, 234, 96, 28});                   // FX: TYPE a pill, TAPE
-    add(Ctl::Global, GB_G_TAPE, {938, 220, 60, 56});
+    add(Ctl::Global, 0, {800, 234, 96, 28});                   // FX: TYPE a pill, TAPE
+    add(Ctl::Global, 1, {938, 220, 60, 56});
     add(Ctl::Master, 0, {818, 304, 60, 56});
     for (int i = 0; i < 3; i++)                                          // HARDWARE: SELECT ALGORITHM PRESETS
         add(Ctl::Enc, GB_ENC_SELECT + i, {812 + i * 72.f, 392, 48, 48});

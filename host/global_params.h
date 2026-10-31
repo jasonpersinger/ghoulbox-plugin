@@ -14,15 +14,9 @@ struct GlobalParam {
     const char* const* names;    // enum value names, or nullptr
 };
 
-static const char* const GP_ONOFF[] = {"OFF", "ON"};
-static const char* const GP_MOOD[] = {"MIN", "DOR", "PHRY", "HARM", "MAJ", "MIX"};
 static const char* const GP_RTYPE[] = {"ROOM", "SPRING", "HALL"};
 
-static const GlobalParam GLOBAL_PARAMS[6] = {
-    {"Dream Evolve", "dream_evol", GB_G_EVOL, 0, 1, GP_ONOFF},
-    {"Dream Density", "dream_dens", GB_G_DENS, 1, 8, nullptr},
-    {"Dream Drift", "dream_drft", GB_G_DRFT, 1, 8, nullptr},
-    {"Dream Mood", "dream_mood", GB_G_MOOD, 0, 5, GP_MOOD},
+static const GlobalParam GLOBAL_PARAMS[2] = {
     {"Reverb Type", "reverb_type", GB_G_RTYPE, 0, 2, GP_RTYPE},
     {"Tape", "tape", GB_G_TAPE, 0, 127, nullptr},
 };

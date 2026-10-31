@@ -29,10 +29,10 @@ const char* const ENC_NAME[GB_NENC] = {"SELECT", "ALGO", "PRESETS", "K1", "K2", 
 constexpr float kEncStepPx = 12;                         // a vertical drag of 12 px: one encoder step
 constexpr uint32_t kPlayGreen = 1u << 14;                // web_lit_buttons: PLAY's green
 /* the plugin's parameter ids (plugin/GhoulboxPlugin.cpp: append-only) */
-constexpr uint32_t kMaster = 0, kHostSync = 1, kTrackFirst = 2, kTrackParams = 8, kGlobalFirst = 34, kLayerFirst = 40,
-                   kParams = 44;
+constexpr uint32_t kMaster = 0, kHostSync = 1, kTrackFirst = 2, kTrackParams = 8, kGlobalFirst = 34,
+                   kGlobalCount = 2, kLayerFirst = kGlobalFirst + kGlobalCount, kParams = kLayerFirst + 4;
 constexpr uint32_t trackParam(uint32_t t, uint32_t k) { return kTrackFirst + t * kTrackParams + k; }   // k: 0 Level, 4.. Knob
-bool isPill(int g) { return g == GB_G_EVOL || g == GB_G_RTYPE; }
+bool isPill(int g) { return g == 0; }
 }
 
 class GhoulboxUI : public UI {
@@ -161,10 +161,10 @@ protected:
         case Ctl::Global:
             if (isPill(h.idx)) {
                 const GlobalParam& g = GLOBAL_PARAMS[h.idx];
-                setParam(kGlobalFirst + h.idx, (float)cycleValue(view_->global[h.idx].value, g.min, g.max));
+                setParam(kGlobalFirst + h.idx, (float)cycleValue(view_->global[g.gb].value, g.min, g.max));
                 break;
             }
-            [[fallthrough]];                            // (DENS DRFT MOOD TAPE: knobs)
+            [[fallthrough]];                            // (TAPE: knob)
         case Ctl::Knob:
         case Ctl::Master:
         case Ctl::Fader: {
@@ -281,7 +281,7 @@ private:
         case Ctl::Fader: return {trackParam((uint32_t)h.idx, 0), 0, 127, (float)view_->track[h.idx].level.pos};
         case Ctl::Global: {
             const GlobalParam& g = GLOBAL_PARAMS[h.idx];
-            return {kGlobalFirst + (uint32_t)h.idx, (float)g.min, (float)g.max, (float)view_->global[h.idx].value};
+            return {kGlobalFirst + (uint32_t)h.idx, (float)g.min, (float)g.max, (float)view_->global[g.gb].value};
         }
         default: return {kMaster, 0, 1023, param_[kMaster]};
         }
@@ -322,8 +322,10 @@ private:
             const gb_ctl& c = view_->track[t].level;
             release(trackParam(t, 0), ccParamStale(param_[trackParam(t, 0)], c.pos, c.max - c.min));
         }
-        for (uint32_t g = 0; g < GB_NG; g++)
-            release(kGlobalFirst + g, valueParamStale(param_[kGlobalFirst + g], view_->global[g].value));
+        for (uint32_t g = 0; g < kGlobalCount; g++) {
+            const GlobalParam& gp = GLOBAL_PARAMS[g];
+            release(kGlobalFirst + g, valueParamStale(param_[kGlobalFirst + g], view_->global[gp.gb].value));
+        }
     }
 
     void turn(int enc, int steps)
@@ -474,18 +476,18 @@ private:
     void drawRight()
     {
         char b[32];
-        heading(800, 56, "DREAM");
         heading(800, 200, "FX");
         heading(800, 284, "MASTER");
-        for (int g = 0; g < GB_NG; g++) {
-            const gb_ctl& c = view_->global[g];
-            const Rect r = rectOf(Hit{Ctl::Global, g});
+        for (uint32_t g = 0; g < kGlobalCount; g++) {
+            const GlobalParam& gp = GLOBAL_PARAMS[g];
+            const gb_ctl& c = view_->global[gp.gb];
+            const Rect r = rectOf(Hit{Ctl::Global, (int)g});
             if (isPill(g)) {
                 std::snprintf(b, sizeof b, "%s %s", c.label, c.text);
-                pill(r, b, g == GB_G_EVOL && c.value);
+                pill(r, b, false);
             } else
                 knob(r, c.max > c.min ? (float)(c.value - c.min) / (c.max - c.min) : 0, c.label, c.text,
-                     drag_ == Hit{Ctl::Global, g});
+                     drag_ == Hit{Ctl::Global, (int)g});
         }
         std::snprintf(b, sizeof b, "%d", (int)std::lround(param_[kMaster]));
         knob(rectOf(Hit{Ctl::Master, 0}), param_[kMaster] / 1023.f, "VOL", b, drag_ == Hit{Ctl::Master, 0});
