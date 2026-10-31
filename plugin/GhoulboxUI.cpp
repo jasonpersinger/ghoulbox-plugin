@@ -71,6 +71,16 @@ protected:
 
     void uiIdle() override
     {
+        if (tooltipsEnabled_ && hover_.ctl != Ctl::None && !tooltipVisible_ &&
+            dragParam_ < 0 && drag_.ctl == Ctl::None) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - hoverStart_).count();
+            if (elapsed >= kTooltipDelayMs) {
+                tooltipVisible_ = true;
+                tooltipPos_ = mousePos_;
+                repaint();
+            }
+        }
         if (!bridge_ || !bridge_->read(*view_, screen_.data()))
             return;
         screenToRgba(screen_.data(), rgba_.data());
@@ -126,11 +136,24 @@ protected:
             dragParam_ = -1;
             drag_ = Hit{Ctl::None, 0};
             hover_ = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
+            hoverStart_ = std::chrono::steady_clock::now();
+            tooltipVisible_ = false;
             repaint();
             return true;
         }
+        tooltipVisible_ = false;
         hover_ = Hit{Ctl::None, 0};
         const Hit h = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
+        if (h.ctl == Ctl::TooltipToggle) {
+            if (ev.button == kMouseButtonLeft) {
+                tooltipsEnabled_ = !tooltipsEnabled_;
+                hover_ = h;
+                hoverStart_ = std::chrono::steady_clock::now();
+                repaint();
+                return true;
+            }
+            return false;
+        }
         switch (h.ctl) {
         case Ctl::Screen:
             getWindow().focus();
@@ -217,7 +240,11 @@ protected:
         const Hit h = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
         if (!(h == hover_)) {
             hover_ = h;
-            repaint();
+            hoverStart_ = std::chrono::steady_clock::now();
+            if (tooltipVisible_) {
+                tooltipVisible_ = false;
+                repaint();
+            }
         }
         return false;
     }
@@ -430,6 +457,15 @@ private:
         say(16, 26, "GHOULBOX", 36, AMBER, ALIGN_LEFT | ALIGN_MIDDLE, mark_);
         std::snprintf(b, sizeof b, "%d BPM", (int)view_->bpm);
         say(kW - 16, 26, b, 22, BONE, ALIGN_RIGHT | ALIGN_MIDDLE);
+
+        // Tooltip toggle checkbox
+        const Rect tr = rectOf(Hit{Ctl::TooltipToggle, 0});
+        const Rect boxRect{tr.x, tr.y + 4.f, 14.f, 14.f};
+        const bool hovered = hover_.ctl == Ctl::TooltipToggle;
+        box(boxRect, PLAQUE, hovered ? AMBER : STONE, 1.f, 2);
+        if (tooltipsEnabled_)
+            say(boxRect.x + 7.f, boxRect.y + 8.f, "X", 14, AMBER, ALIGN_CENTER | ALIGN_MIDDLE);
+        say(tr.x + 22.f, tr.y + 12.f, "TOOLTIPS", 16, tooltipsEnabled_ ? BONE : DIM, ALIGN_LEFT | ALIGN_MIDDLE);
     }
 
     void drawSounds()
@@ -641,6 +677,8 @@ private:
             std::snprintf(b, sizeof b, "SLOT %d VOLUME: Output level (CC 7) · Drag to adjust", h.idx + 1);
             return b;
         }
+        case Ctl::TooltipToggle:
+            return "TOOLTIPS: Toggle hover help popups on/off";
         case Ctl::SoundList:
         case Ctl::SoundRow:
             return "SOUND BROWSER: Click to load sound into active slot · Scroll to browse";
@@ -653,7 +691,7 @@ private:
 
     void drawTooltip()
     {
-        if (hover_.ctl == Ctl::None || dragParam_ >= 0 || drag_.ctl != Ctl::None)
+        if (!tooltipsEnabled_ || !tooltipVisible_ || hover_.ctl == Ctl::None || dragParam_ >= 0 || drag_.ctl != Ctl::None)
             return;
         const char* tip = tooltipFor(hover_);
         if (!tip || !*tip)
@@ -666,12 +704,12 @@ private:
         const float tw = bounds.getWidth() + 18.f;
         const float th = 26.f;
 
-        float tx = mousePos_.getX() + 14.f;
-        float ty = mousePos_.getY() + 14.f;
+        float tx = tooltipPos_.getX() + 14.f;
+        float ty = tooltipPos_.getY() + 14.f;
         if (tx + tw > kW - 8.f)
-            tx = mousePos_.getX() - tw - 8.f;
+            tx = tooltipPos_.getX() - tw - 8.f;
         if (ty + th > kH - 8.f)
-            ty = mousePos_.getY() - th - 8.f;
+            ty = tooltipPos_.getY() - th - 8.f;
         if (tx < 8.f)
             tx = 8.f;
         if (ty < 8.f)
@@ -694,7 +732,12 @@ private:
     uint32_t keys_ = 0, keyButtons_ = 0;                 // held by the computer keyboard
     Hit drag_{Ctl::None, 0};
     Hit hover_{Ctl::None, 0};
+    bool tooltipsEnabled_ = true;
+    bool tooltipVisible_ = false;
     Point<float> mousePos_{0, 0};
+    Point<float> tooltipPos_{0, 0};
+    std::chrono::steady_clock::time_point hoverStart_{};
+    static constexpr int kTooltipDelayMs = 450;
     float dragY_ = 0, dragAcc_ = 0;
     float encAngle_[GB_NENC] = {};
     int dragParam_ = -1;                                 // the parameter a drag sets, -1 = none

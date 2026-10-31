@@ -19,6 +19,7 @@ static std::vector<std::pair<Hit, Rect>> build()
         add(Ctl::Button, ROW2[i], {280 + i * 98.f, 592, 88, 32});
     for (int k = 0; k < 4; k++)
         add(Ctl::Knob, k, {310 + k * 120.f, 644, 60, 56});
+    add(Ctl::TooltipToggle, 0, {794, 14, 96, 24});                       // TOOLTIPS toggle
     add(Ctl::Master, 0, {876, 92, 64, 58});                              // MASTER VOL
     add(Ctl::Global, 0, {794, 208, 104, 32});                            // FX: TYPE pill
     add(Ctl::Global, 1, {926, 198, 64, 58});                             // TAPE knob

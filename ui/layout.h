@@ -12,7 +12,7 @@ struct Rect {
 };
 enum class Ctl : uint8_t { None, Screen, Button /*GB_BTN_*/, Enc /*GB_ENC_*/, Knob /*0..3*/, Global /*GB_G_*/,
                            Master, Fader /*track*/, TrackSel /*track*/, SoundRow /*visible row*/, SoundList, Step /*0..15*/,
-                           Layer /*track: its MIDI layer toggle*/ };
+                           Layer /*track: its MIDI layer toggle*/, TooltipToggle };
 struct Hit {
     Ctl ctl;
     int idx;
