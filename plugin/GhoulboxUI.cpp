@@ -107,7 +107,9 @@ protected:
         drawKnobs();
         drawRight();
         drawEncoders();
+        drawCheatSheet();
         drawSlots();
+        drawTooltip();
         restore();
     }
 
@@ -123,9 +125,11 @@ protected:
                 editParameter((uint32_t)dragParam_, false);
             dragParam_ = -1;
             drag_ = Hit{Ctl::None, 0};
+            hover_ = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
             repaint();
             return true;
         }
+        hover_ = Hit{Ctl::None, 0};
         const Hit h = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
         switch (h.ctl) {
         case Ctl::Screen:
@@ -186,9 +190,12 @@ protected:
 
     bool onMotion(const MotionEvent& ev) override
     {
+        const float mx = (float)ev.pos.getX() / s();
+        const float my = (float)ev.pos.getY() / s();
+        mousePos_ = Point<float>(mx, my);
         if (dragParam_ >= 0) {
             const ParamCtl pc = paramCtl(drag_);
-            const float v = dragValue(dragStart_, (float)ev.pos.getY() / s() - dragY0_, pc.min, pc.max);
+            const float v = dragValue(dragStart_, my - dragY0_, pc.min, pc.max);
             if (v != param_[pc.id]) {
                 param_[pc.id] = v;
                 touched(pc.id);
@@ -197,16 +204,22 @@ protected:
             }
             return true;
         }
-        if (drag_.ctl != Ctl::Enc)
-            return false;
-        const float y = (float)ev.pos.getY() / s();
-        dragAcc_ += dragY_ - y;                         // (up: clockwise)
-        dragY_ = y;
-        for (; dragAcc_ >= kEncStepPx; dragAcc_ -= kEncStepPx)
-            turn(drag_.idx, 1);
-        for (; dragAcc_ <= -kEncStepPx; dragAcc_ += kEncStepPx)
-            turn(drag_.idx, -1);
-        return true;
+        if (drag_.ctl == Ctl::Enc) {
+            const float y = my;
+            dragAcc_ += dragY_ - y;                         // (up: clockwise)
+            dragY_ = y;
+            for (; dragAcc_ >= kEncStepPx; dragAcc_ -= kEncStepPx)
+                turn(drag_.idx, 1);
+            for (; dragAcc_ <= -kEncStepPx; dragAcc_ += kEncStepPx)
+                turn(drag_.idx, -1);
+            return true;
+        }
+        const Hit h = hitTest((float)ev.pos.getX(), (float)ev.pos.getY(), s());
+        if (!(h == hover_)) {
+            hover_ = h;
+            repaint();
+        }
+        return false;
     }
 
     bool onScroll(const ScrollEvent& ev) override
@@ -464,7 +477,7 @@ private:
     void drawKnobs()
     {
         char b[48];
-        std::snprintf(b, sizeof b, "TRACK %d · %s", view_->sel + 1, view_->track[view_->sel % 4].sound);
+        std::snprintf(b, sizeof b, "SLOT %d · %s", view_->sel + 1, view_->track[view_->sel % 4].sound);
         heading(280, 624, b);
         for (int k = 0; k < 4; k++) {
             const gb_ctl& c = view_->knob[k];
@@ -475,21 +488,22 @@ private:
     void drawRight()
     {
         char b[32];
-        heading(800, 200, "FX");
-        heading(800, 284, "MASTER");
+        heading(800, 68, "MASTER");
+        std::snprintf(b, sizeof b, "%d", (int)std::lround(param_[kMaster]));
+        knob(rectOf(Hit{Ctl::Master, 0}), param_[kMaster] / 1023.f, "VOL", b, drag_ == Hit{Ctl::Master, 0});
+
+        heading(800, 178, "GLOBAL FX");
         for (uint32_t g = 0; g < kGlobalCount; g++) {
             const GlobalParam& gp = GLOBAL_PARAMS[g];
             const gb_ctl& c = view_->global[gp.gb];
             const Rect r = rectOf(Hit{Ctl::Global, (int)g});
             if (isPill(g)) {
-                std::snprintf(b, sizeof b, "%s %s", c.label, c.text);
+                std::snprintf(b, sizeof b, "TYPE: %s", c.text);
                 pill(r, b, false);
             } else
                 knob(r, c.max > c.min ? (float)(c.value - c.min) / (c.max - c.min) : 0, c.label, c.text,
                      drag_ == Hit{Ctl::Global, (int)g});
         }
-        std::snprintf(b, sizeof b, "%d", (int)std::lround(param_[kMaster]));
-        knob(rectOf(Hit{Ctl::Master, 0}), param_[kMaster] / 1023.f, "VOL", b, drag_ == Hit{Ctl::Master, 0});
     }
 
     void drawSlots()
@@ -517,33 +531,154 @@ private:
         }
     }
 
-    void dial(const Rect& r, float angle, const Color& pointer)
+    void dial(const Rect& r, float angle, bool active)
     {
-        const float cx = r.x + r.w / 2, cy = r.y + r.w / 2, rad = r.w / 2 - 3;
+        const float cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = r.w / 2 - 2;
         beginPath();
         circle(cx, cy, rad);
-        fillColor(PLAQUE);
+        fillColor(NIGHT);
         fill();
-        strokeColor(FRAME);
+        strokeColor(active ? AMBER : FRAME);
         strokeWidth(2);
         stroke();
+
         beginPath();
-        moveTo(cx + std::sin(angle) * rad * 0.35f, cy - std::cos(angle) * rad * 0.35f);
-        lineTo(cx + std::sin(angle) * rad * 0.9f, cy - std::cos(angle) * rad * 0.9f);
-        strokeColor(pointer);
+        circle(cx, cy, rad * 0.70f);
+        fillColor(PLAQUE);
+        fill();
+        strokeColor(active ? AMBER.withAlpha(0.7f) : STONE);
+        strokeWidth(1);
+        stroke();
+
+        beginPath();
+        moveTo(cx + std::sin(angle) * rad * 0.25f, cy - std::cos(angle) * rad * 0.25f);
+        lineTo(cx + std::sin(angle) * rad * 0.85f, cy - std::cos(angle) * rad * 0.85f);
+        strokeColor(active ? BONE : AMBER);
         strokeWidth(2.5f);
         stroke();
     }
 
     void drawEncoders()
     {
-        const Rect first = rectOf(Hit{Ctl::Enc, GB_ENC_SELECT});
-        say(800, first.y - 20, "HARDWARE", 18, AMBER, ALIGN_LEFT | ALIGN_TOP);
-        for (int e = 0; e < GB_NENC; e++) {
+        heading(800, 286, "HARDWARE ENCODERS");
+        for (int e = 0; e < 3; e++) {
             const Rect r = rectOf(Hit{Ctl::Enc, e});
-            dial(r, encAngle_[e], drag_ == Hit{Ctl::Enc, e} ? AMBER : BONE);
-            say(r.x + r.w / 2, r.y + r.h, ENC_NAME[e], 13, DIM, ALIGN_CENTER | ALIGN_TOP);
+            dial(r, encAngle_[e], drag_ == Hit{Ctl::Enc, e});
+            say(r.x + r.w / 2, r.y + r.h + 2, ENC_NAME[e], 14, DIM, ALIGN_CENTER | ALIGN_TOP);
         }
+        say(800, 426, "KNOBS 1 - 4", 14, DIM, ALIGN_LEFT | ALIGN_TOP);
+        for (int e = 3; e < GB_NENC; e++) {
+            const Rect r = rectOf(Hit{Ctl::Enc, e});
+            dial(r, encAngle_[e], drag_ == Hit{Ctl::Enc, e});
+            say(r.x + r.w / 2, r.y + r.h + 2, ENC_NAME[e], 14, DIM, ALIGN_CENTER | ALIGN_TOP);
+        }
+    }
+
+    void drawCheatSheet()
+    {
+        const Rect r{794, 536, 228, 148};
+        box(r, NIGHT, FRAME, 1, 3);
+        say(r.x + 12, r.y + 10, "QUICK REFERENCE", 15, AMBER, ALIGN_LEFT | ALIGN_TOP);
+        say(r.x + 12, r.y + 34, "· RIGHT-CLICK: Latch button", 14, BONE, ALIGN_LEFT | ALIGN_TOP);
+        say(r.x + 12, r.y + 56, "· SCROLL / DRAG: Turn dials", 14, BONE, ALIGN_LEFT | ALIGN_TOP);
+        say(r.x + 12, r.y + 78, "· Z/A KEYS: Play musical notes", 14, BONE, ALIGN_LEFT | ALIGN_TOP);
+        say(r.x + 12, r.y + 100, "· 1-0 KEYS: Trigger buttons", 14, BONE, ALIGN_LEFT | ALIGN_TOP);
+        say(r.x + 12, r.y + 122, "· [ / ] KEYS: Octave down/up", 14, BONE, ALIGN_LEFT | ALIGN_TOP);
+    }
+
+    const char* tooltipFor(Hit h) const
+    {
+        switch (h.ctl) {
+        case Ctl::Button:
+            switch (h.idx) {
+            case GB_BTN_FX: return "FX: Reverb & Delay sends, Chorus/Flange, Distortion";
+            case GB_BTN_SCL: return "SCL: Scale selection, Root note, and Microtuning";
+            case GB_BTN_ENV: return "ENV: Attack, Decay, Sustain, and Release envelope times";
+            case GB_BTN_LFO: return "LFO: Low Frequency Oscillator rate, waveform & depth";
+            case GB_BTN_EDIT: return "EDIT: FM sound engine, algorithm, and operator parameters";
+            case GB_BTN_HOME: return "HOME: Main performance screen (Hold for system Menu)";
+            case GB_BTN_SAVE: return "SAVE: Store current sound into shared user library";
+            case GB_BTN_ARP: return "ARP: Arpeggiator mode, tempo division, gate & octave";
+            case GB_BTN_OCTDN: return "OCT-: Shift keyboard pitch down one octave";
+            case GB_BTN_OCTUP: return "OCT+: Shift keyboard pitch up one octave";
+            default: return nullptr;
+            }
+        case Ctl::Knob: {
+            static char b[80];
+            const gb_ctl& c = view_->knob[h.idx];
+            std::snprintf(b, sizeof b, "Slot %d Knob %d: %s (%s) · Drag up/down",
+                          view_->sel + 1, h.idx + 1, c.label, c.text);
+            return b;
+        }
+        case Ctl::Global:
+            return h.idx == 0 ? "REVERB TYPE: Click to cycle Room, Spring, and Hall"
+                              : "TAPE: Analog warmth, saturation & hiss · Drag to adjust";
+        case Ctl::Master:
+            return "MASTER VOLUME: Overall plugin output level · Drag to adjust";
+        case Ctl::Enc:
+            switch (h.idx) {
+            case GB_ENC_SELECT: return "SELECT: Navigate menu items & settings · Scroll or drag";
+            case GB_ENC_ALGO: return "ALGORITHM: Switch algorithms & options · Scroll or drag";
+            case GB_ENC_PRESETS: return "PRESETS: Browse preset sounds · Scroll or drag";
+            case GB_ENC_K1: return "K1 ENCODER: Hardware encoder 1 · Scroll or drag";
+            case GB_ENC_K2: return "K2 ENCODER: Hardware encoder 2 · Scroll or drag";
+            case GB_ENC_K3: return "K3 ENCODER: Hardware encoder 3 · Scroll or drag";
+            case GB_ENC_K4: return "K4 ENCODER: Hardware encoder 4 · Scroll or drag";
+            default: return nullptr;
+            }
+        case Ctl::TrackSel: {
+            static char b[64];
+            std::snprintf(b, sizeof b, "SLOT %d: Click to select slot for sound editing", h.idx + 1);
+            return b;
+        }
+        case Ctl::Layer: {
+            static char b[80];
+            std::snprintf(b, sizeof b, "SLOT %d ON/OFF: Toggle slot. All enabled slots play in unison", h.idx + 1);
+            return b;
+        }
+        case Ctl::Fader: {
+            static char b[64];
+            std::snprintf(b, sizeof b, "SLOT %d VOLUME: Output level (CC 7) · Drag to adjust", h.idx + 1);
+            return b;
+        }
+        case Ctl::SoundList:
+        case Ctl::SoundRow:
+            return "SOUND BROWSER: Click to load sound into active slot · Scroll to browse";
+        case Ctl::Screen:
+            return "FIRMWARE DISPLAY: Live M-Vave FM-1 screen · Click to focus keyboard";
+        default:
+            return nullptr;
+        }
+    }
+
+    void drawTooltip()
+    {
+        if (hover_.ctl == Ctl::None || dragParam_ >= 0 || drag_.ctl != Ctl::None)
+            return;
+        const char* tip = tooltipFor(hover_);
+        if (!tip || !*tip)
+            return;
+
+        fontFaceId(text_);
+        fontSize(16);
+        Rectangle<float> bounds;
+        textBounds(0, 0, tip, nullptr, bounds);
+        const float tw = bounds.getWidth() + 18.f;
+        const float th = 26.f;
+
+        float tx = mousePos_.getX() + 14.f;
+        float ty = mousePos_.getY() + 14.f;
+        if (tx + tw > kW - 8.f)
+            tx = mousePos_.getX() - tw - 8.f;
+        if (ty + th > kH - 8.f)
+            ty = mousePos_.getY() - th - 8.f;
+        if (tx < 8.f)
+            tx = 8.f;
+        if (ty < 8.f)
+            ty = 8.f;
+
+        box(Rect{tx, ty, tw, th}, NIGHT, AMBER, 1.5f, 4);
+        say(tx + 9.f, ty + th / 2.f + 1.f, tip, 16, BONE, ALIGN_LEFT | ALIGN_MIDDLE);
     }
 
     UiBridge* const bridge_;
@@ -558,6 +693,8 @@ private:
     int pressed_ = -1;                                   // the button the left mouse holds
     uint32_t keys_ = 0, keyButtons_ = 0;                 // held by the computer keyboard
     Hit drag_{Ctl::None, 0};
+    Hit hover_{Ctl::None, 0};
+    Point<float> mousePos_{0, 0};
     float dragY_ = 0, dragAcc_ = 0;
     float encAngle_[GB_NENC] = {};
     int dragParam_ = -1;                                 // the parameter a drag sets, -1 = none

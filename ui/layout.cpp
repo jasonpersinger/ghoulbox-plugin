@@ -19,13 +19,16 @@ static std::vector<std::pair<Hit, Rect>> build()
         add(Ctl::Button, ROW2[i], {280 + i * 98.f, 592, 88, 32});
     for (int k = 0; k < 4; k++)
         add(Ctl::Knob, k, {310 + k * 120.f, 644, 60, 56});
-    add(Ctl::Global, 0, {800, 234, 96, 28});                   // FX: TYPE a pill, TAPE
-    add(Ctl::Global, 1, {938, 220, 60, 56});
-    add(Ctl::Master, 0, {818, 304, 60, 56});
-    for (int i = 0; i < 3; i++)                                          // HARDWARE: SELECT ALGORITHM PRESETS
-        add(Ctl::Enc, GB_ENC_SELECT + i, {812 + i * 72.f, 392, 48, 48});
-    for (int i = 0; i < 4; i++)                                          // .. KNOB 1..4
-        add(Ctl::Enc, GB_ENC_K1 + i, {800 + i * 60.f, 452, 48, 48});
+    add(Ctl::Master, 0, {876, 92, 64, 58});                              // MASTER VOL
+    add(Ctl::Global, 0, {794, 208, 104, 32});                            // FX: TYPE pill
+    add(Ctl::Global, 1, {926, 198, 64, 58});                             // TAPE knob
+    add(Ctl::Enc, GB_ENC_SELECT, {794, 320, 48, 48});                   // HARDWARE: SELECT
+    add(Ctl::Enc, GB_ENC_ALGO, {884, 320, 48, 48});                     // .. ALGO
+    add(Ctl::Enc, GB_ENC_PRESETS, {974, 320, 48, 48});                  // .. PRESETS
+    add(Ctl::Enc, GB_ENC_K1, {794, 456, 46, 46});                       // .. K1
+    add(Ctl::Enc, GB_ENC_K2, {855, 456, 46, 46});                       // .. K2
+    add(Ctl::Enc, GB_ENC_K3, {916, 456, 46, 46});                       // .. K3
+    add(Ctl::Enc, GB_ENC_K4, {977, 456, 46, 46});                       // .. K4
     for (int t = 0; t < 4; t++) {
         const float x0 = 10 + t * 256.f;
         add(Ctl::TrackSel, t, {x0 + 16, 736, 110, 26});                  // Slot select pill
