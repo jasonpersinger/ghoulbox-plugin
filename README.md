@@ -22,13 +22,6 @@ a MIDI track. CLAP, VST3 and LV2 for Linux. GPL-3.0-only. Releases before 1.0 ar
   Phrygian dominant, Hungarian minor or double harmonic among the scales.
 - **Deep sound shaping.** Envelopes, LFOs, an arpeggiator, and a full editor down to the FM operators, on a
   pixel-art screen with flickering wall torches. Scroll or drag a knob to turn it; right-click a button to hold it.
-- **Play from the computer keyboard.** Click the screen, then Z–/, S–' and Q–O play notes, 1–0 press the
-  buttons, [ and ] shift the octave, and the arrow keys turn SELECT and ALGO.
-- **Automation.** Master volume, each slot's on/off, level, pan, reverb and delay sends and its four sound
-  knobs, the reverb type and TAPE are parameters your DAW can automate.
-- **Made for the DAW.** It follows your project's tempo, saves its sounds and settings with your project, and
-  stays silent until it gets MIDI. Sounds you SAVE go to a library shared by every GHOULBOX on your computer
-  (`~/.local/share/GHOULBOX`).
 - **Tooltips.** Hover anything for what it does; switch them off at the top of the window.
 
 For 64-bit Linux (glibc 2.34 or newer, X11 or XWayland). Tested in REAPER. A beta: expect rough edges, and
