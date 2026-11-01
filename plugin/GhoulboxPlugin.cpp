@@ -47,6 +47,7 @@ public:
                 param_[i] = 0.f;
             else
                 param_[i] = -1.f;
+            applied_[i] = param_[i];
         }
         dirty_ = 1ull << kMaster;
         events_.reserve(MAX_EVENTS);
@@ -248,6 +249,7 @@ private:
             if (!(d & 1))
                 continue;
             const float v = param_[i];
+            applied_[i] = v;
             if (i == kMaster)
                 api().master((uint32_t)std::lround(v));
             else if (i >= kGlobalFirst) {
@@ -292,24 +294,30 @@ private:
         }
     }
 
+    /* param i back to unset if the core has moved off it; never a host value the core has not had yet (D1): read the
+     * value first, then whether it is pending, and unset only that value (a newer write wins) */
+    template <class Stale> void unsetIfStale(uint32_t i, Stale stale)
+    {
+        float x = param_[i];
+        if (x == applied_[i] && !(dirty_.load() >> i & 1u) && stale(x))
+            param_[i].compare_exchange_strong(x, -1.f);
+    }
+
     void reconcileStaleParams()
     {
         api().view_read(&view_);
         for (uint32_t g = 0; g < kGlobalCount; g++) {
             const GlobalParam& gp = GLOBAL_PARAMS[g];
-            if (valueParamStale(param_[kGlobalFirst + g], view_.global[gp.gb].value))
-                param_[kGlobalFirst + g] = -1.f;
+            unsetIfStale(kGlobalFirst + g, [&](float x) { return valueParamStale(x, view_.global[gp.gb].value); });
         }
         for (uint32_t t = 0; t < 4; t++) {
             const gb_ctl& c = view_.track[t].level;
-            if (ccParamStale(param_[kSlotFirst + t * kSlotParams + 1], c.pos, c.max - c.min))
-                param_[kSlotFirst + t * kSlotParams + 1] = -1.f;
+            unsetIfStale(kSlotFirst + t * kSlotParams + 1, [&](float x) { return ccParamStale(x, c.pos, c.max - c.min); });
         }
         const uint32_t sel = view_.sel % 4;
         for (uint32_t k = 0; k < 4; k++) {
             const gb_ctl& c = view_.knob[k];
-            if (ccParamStale(param_[kSlotFirst + sel * kSlotParams + 5 + k], c.pos, c.max - c.min))
-                param_[kSlotFirst + sel * kSlotParams + 5 + k] = -1.f;
+            unsetIfStale(kSlotFirst + sel * kSlotParams + 5 + k, [&](float x) { return ccParamStale(x, c.pos, c.max - c.min); });
         }
     }
 
@@ -430,6 +438,7 @@ private:
     std::vector<MidiEv> events_, clockEvents_, hostEvents_, layered_;
     std::atomic<float> param_[kParamCount];
     std::atomic<uint64_t> dirty_{0};
+    float applied_[kParamCount];                        // (under coreMutex_) the value applyParams last gave the core
 
     Library library_;
     std::vector<uint8_t> base_, snap_;                  // base_: the worker's; snap_: under snapMutex_

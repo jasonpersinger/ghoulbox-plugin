@@ -7,6 +7,7 @@
 #include "clap/ext/state.h"
 #include "clap/host.h"
 #include "clap/plugin-factory.h"
+#include <atomic>
 #include <chrono>
 #include "private_runtime_dir.h"
 #include <cmath>
@@ -410,6 +411,103 @@ static clap_id paramId(const Inst& a, uint32_t index)
     auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
     clap_param_info_t info{};
     return pa && pa->get_info(a.p, index, &info) ? info.id : CLAP_INVALID_ID;
+}
+
+/* D1: values a host sets through params.flush are kept at a save that no process block precedes: the instance still
+ * reports them after the save, and the saved state gives them back */
+static void test_flush_values_kept_at_save()
+{
+    Inst a, b;
+    CHECK(a.p && b.p);
+    a.runFor(0.1);
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    CHECK(pa);
+    const struct { uint32_t index; double v; } set[] = {
+        {0, 700}, {2, 17}, {3, 90}, {4, 40}, {5, 30}, {6, 99}, {10, 1}, {19, 1}, {38, 77}};   /* 2: Slot 1 Level, 6: Slot 1 Knob 1, 38: Tape */
+    MixedEvents in;
+    for (const auto& s : set)
+        in.param(paramId(a, s.index), s.v);
+    pa->flush(a.p, &in.list, &outEvents);
+    const std::string s = a.save();                     /* no process block since the flush */
+    CHECK(!s.empty() && b.load(s));
+    int lost = 0;
+    for (const auto& x : set) {
+        double live = -2, back = -2;
+        pa->get_value(a.p, paramId(a, x.index), &live);
+        pa->get_value(b.p, paramId(b, x.index), &back);
+        if (live != x.v || back != x.v) {
+            std::fprintf(stderr, "  param %u: set %g, live %g, reloaded %g\n", x.index, x.v, live, back);
+            ++lost;
+        }
+    }
+    if (lost)
+        std::fprintf(stderr, "  lost %d of %zu\n", lost, sizeof set / sizeof set[0]);
+    CHECK(lost == 0);
+}
+
+/* D1 under contention: a process thread sends parameter values every block (setParameterValue outside coreMutex_)
+ * while the main thread saves; afterwards the last values stand (run under ThreadSanitizer too: see the handoff) */
+static void test_params_and_saves_concurrent()
+{
+    Inst a;
+    CHECK(a.p);
+    a.runFor(0.1);
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    CHECK(pa);
+    const clap_id level = paramId(a, 2), knob = paramId(a, 6), tape = paramId(a, 38);
+    std::atomic<bool> done{false};
+    std::thread audio([&] {
+        for (int n = 0; n < 2000; n++) {
+            MixedEvents in;
+            in.param(level, n % 128);
+            in.param(knob, (n * 7) % 128);
+            in.param(tape, (n * 13) % 128);
+            a.run(64, nullptr, &in.list);
+        }
+        done = true;
+    });
+    int saves = 0, empty = 0;
+    while (!done) {
+        empty += a.save().empty();
+        saves++;
+    }
+    audio.join();
+    CHECK(empty == 0);
+    MixedEvents last;
+    last.param(level, 17);
+    last.param(knob, 99);
+    last.param(tape, 77);
+    pa->flush(a.p, &last.list, &outEvents);
+    CHECK(!a.save().empty());
+    double l = -2, k = -2, t = -2;
+    pa->get_value(a.p, level, &l);
+    pa->get_value(a.p, knob, &k);
+    pa->get_value(a.p, tape, &t);
+    std::fprintf(stderr, "    %d saves during 2000 blocks\n", saves);
+    CHECK(saves > 0 && l == 17 && k == 99 && t == 77);
+}
+
+/* D1's guard: a value the core has had, which the firmware then moves without the host (Tape by MIDI CC 86, a path
+ * run()'s slot CC check does not see), still goes back to unset at save (GB-002, GB-006) */
+static void test_firmware_move_unsets_at_save()
+{
+    Inst a, b;
+    CHECK(a.p && b.p);
+    auto* pa = (const clap_plugin_params_t*)a.p->get_extension(a.p, CLAP_EXT_PARAMS);
+    CHECK(pa);
+    MixedEvents in;
+    in.param(paramId(a, 38), 77);                       /* Tape 77, given to the core */
+    a.run(512, nullptr, &in.list);
+    a.runFor(0.1);
+    const std::string held = project(a.save());
+    double v = -2;
+    CHECK(pa->get_value(a.p, paramId(a, 38), &v) && v == 77);
+    const uint8_t cc86[3] = {0xB0, 86, 20};             /* the firmware's TAPE: 20 */
+    a.runFor(0.1, cc86);
+    const std::string s = a.save();
+    CHECK(project(s) != held);                          /* the core moved */
+    CHECK(pa->get_value(a.p, paramId(a, 38), &v) && v == -1);
+    CHECK(b.load(s) && pa->get_value(b.p, paramId(b, 38), &v) && v == -1);
 }
 
 /* MIDI slot layering: a note on channel 16 plays slot 1 by default; enabling slot 3 plays both; all off is silent */
@@ -896,6 +994,9 @@ int main()
         {"test_param_list", test_param_list},
         {"test_global_param_changes_state", test_global_param_changes_state},
         {"test_gui_extension", test_gui_extension},
+        {"test_flush_values_kept_at_save", test_flush_values_kept_at_save},
+        {"test_firmware_move_unsets_at_save", test_firmware_move_unsets_at_save},
+        {"test_params_and_saves_concurrent", test_params_and_saves_concurrent},
         {"test_layer_plays_any_channel", test_layer_plays_any_channel},
         {"test_saved_firmware_edits_preserved_on_restore", test_saved_firmware_edits_preserved_on_restore},
         {"test_disable_slot_silences_held_notes", test_disable_slot_silences_held_notes},
