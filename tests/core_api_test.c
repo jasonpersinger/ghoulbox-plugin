@@ -377,6 +377,113 @@ static void test_midi_base(void)
     CHECK(gb_midi_base() == -1);                    /* SEL */
 }
 
+/* GB-001: a same-instant burst far past the 64-entry ring is taken whole: never refused, no overflow panic, the held
+ * note still sounding; the output ring never runs past its room */
+static void test_gb001_burst_never_refused(void)
+{
+    uint32_t k;
+    fresh();
+    gb_midi(0x90, 60, 100);
+    peak(MS(200));
+    for (k = 0; k < 300; k++)                       /* 300 CC1 at one instant (4 slots x 75) */
+        CHECK(gb_midi((uint8_t)(0xB0 | (k & 3)), 1, (uint8_t)(k & 127)) == 1);
+    CHECK(gb_midi_refused == 0 && !midi_in_overflow);
+    CHECK(gb_midi_drains == 300 / MQ);              /* one drain per full ring, no more */
+    CHECK(ring_w - ring_r <= GB_DRAIN_ROOM);
+    peak(MS(500));
+    CHECK(peak(MS(100)) > 0.01f);                   /* the held note was never released */
+}
+
+/* GB-001: order across a drain: a note-on that waits behind a full ring still starts, its note-off (after another
+ * drain) still ends it */
+static void test_gb001_order_across_drain(void)
+{
+    uint32_t k;
+    fresh();
+    for (k = 0; k < 70; k++)
+        gb_midi(0xB0, 1, (uint8_t)k);
+    gb_midi(0x90, 60, 100);                         /* behind one drain */
+    CHECK(peak(MS(200)) > 0.01f);
+    for (k = 0; k < 130; k++)
+        gb_midi(0xB0, 1, (uint8_t)k);
+    gb_midi(0x80, 60, 0);                           /* behind two more */
+    CHECK(gb_midi_refused == 0 && gb_midi_drains == 3);
+    peak(MS(5000));
+    CHECK(peak(MS(100)) < 1e-3f);                   /* (as test_note_sounds: ~4 s of tail) */
+}
+
+/* GB-001: a seeded stress of random bursts (up to 300 messages) between random renders (1..1024 frames): nothing
+ * refused, the output ring within its room, every sample finite */
+static void test_gb001_seeded_stress(void)
+{
+    uint32_t seed, k, i, maxBuf = 0;
+    for (seed = 1; seed <= 3; seed++) {
+        uint32_t x = seed * 2654435761u;
+        fresh();
+        for (k = 0; k < 400; k++) {
+            uint32_t burst, n;
+            x = x * 1664525u + 1013904223u;
+            burst = (x >> 8) % 301u;
+            for (i = 0; i < burst; i++) {
+                uint8_t st, d1, d2;
+                x = x * 1664525u + 1013904223u;
+                d1 = (uint8_t)(36 + (x >> 9) % 60u);
+                d2 = (uint8_t)((x >> 17) & 127u);
+                switch ((x >> 26) % 5u) {
+                case 0: st = 0x90; d2 |= 1; break;
+                case 1: st = 0x80; break;
+                case 2: st = 0xB0; d1 = 1; break;
+                case 3: st = 0xE0; break;
+                default: st = 0xB0; d1 = 64; break;
+                }
+                CHECK(gb_midi((uint8_t)(st | ((x >> 3) & 3u)), d1, d2) == 1);
+                maxBuf = ring_w - ring_r > maxBuf ? ring_w - ring_r : maxBuf;
+            }
+            x = x * 1664525u + 1013904223u;
+            n = 1u + (x >> 10) % 1024u;
+            gb_render(bl, br, n);
+            for (i = 0; i < n; i++)
+                CHECK(isfinite(bl[i]) && isfinite(br[i]));
+        }
+        CHECK(gb_midi_refused == 0 && gb_midi_no_room == 0);
+        printf("    seed %u: %u drains, max buffered %u frames (room %u)\n", seed, gb_midi_drains, maxBuf,
+               (uint32_t)GB_DRAIN_ROOM);
+        gb_midi_drains = 0;
+    }
+    CHECK(maxBuf <= GB_DRAIN_ROOM + HALF_FRAMES);
+}
+
+/* GB-001: past the output ring's room the drain stands aside (never overwrites unread output): the firmware's own
+ * overflow policy applies, as before */
+static void test_gb001_bounded_by_output_room(void)
+{
+    uint32_t k, ok = 0;
+    fresh();
+    while (ring_w - ring_r <= GB_DRAIN_ROOM)        /* the device far ahead of the host */
+        web_ms();
+    for (k = 0; k < 70; k++)
+        ok += gb_midi(0xB0, 1, (uint8_t)k);
+    CHECK(gb_midi_no_room > 0 && gb_midi_drains == 0);
+    CHECK(ok == MQ && gb_midi_refused == 70 - MQ);
+    CHECK(ring_w - ring_r < RING);
+}
+
+/* GB-003: whatever the project's MIDI IN, channel t plays track t (the plugin's slots); the stored value stays */
+static void test_gb003_route_pinned_for_midi(void)
+{
+    int16_t route;
+    for (route = 0; route <= 4; route++) {
+        fresh();
+        song.g[G_ROUTE] = route;
+        gb_track_cc(0, 7, 0);                       /* track 1 silent: only track 2 may sound */
+        peak(MS(50));
+        gb_midi(0x91, 60, 100);                     /* channel 2: track 2 (slot 2) */
+        CHECK(peak(MS(300)) > 0.005f);
+        CHECK(song.g[G_ROUTE] == route);            /* the menu's and the project's value, untouched */
+        CHECK(gb_midi_base() == (route == 1 ? -1 : route ? (route - 1) * 4 : 0));
+    }
+}
+
 static int run(const char *name, void (*fn)(void))
 {
     int st;
@@ -419,6 +526,11 @@ int main(void)
     f += run("test_quick_tap_reaches_firmware", test_quick_tap_reaches_firmware);
     f += run("test_quick_key_plays", test_quick_key_plays);
     f += run("test_midi_base", test_midi_base);
+    f += run("test_gb001_burst_never_refused", test_gb001_burst_never_refused);
+    f += run("test_gb001_order_across_drain", test_gb001_order_across_drain);
+    f += run("test_gb001_seeded_stress", test_gb001_seeded_stress);
+    f += run("test_gb001_bounded_by_output_room", test_gb001_bounded_by_output_room);
+    f += run("test_gb003_route_pinned_for_midi", test_gb003_route_pinned_for_midi);
     printf(f ? "FAIL: %d\n" : "PASS: all\n", f);
     return f != 0;
 }

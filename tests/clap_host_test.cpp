@@ -550,6 +550,212 @@ static void test_truncation_preserves_note_off()
     CHECK(a.run(4096) < 0.005f);
 }
 
+/* GB-001..003 regression helpers ------------------------------------------------------------------------------------ */
+static void enableSlots(Inst& a, uint32_t mask)          /* slot t on iff bit t (params 1, 10, 19, 28) */
+{
+    MixedEvents ev;
+    for (uint32_t t = 0; t < 4; t++)
+        ev.param(paramId(a, 1 + 9 * t), (mask >> t) & 1u);
+    a.run(512, nullptr, &ev.list);
+}
+/* rms of n frames (one block of `n`, after `ev` at its frames) */
+static double rmsBlock(Inst& a, uint32_t n, const clap_input_events_t* ev = nullptr)
+{
+    std::vector<float> l(n), r(n);
+    float* ch[2] = {l.data(), r.data()};
+    clap_audio_buffer_t out{};
+    out.data32 = ch;
+    out.channel_count = 2;
+    Events none;
+    clap_process_t pr{};
+    pr.steady_time = (int64_t)a.t;
+    pr.frames_count = n;
+    pr.audio_outputs = &out;
+    pr.audio_outputs_count = 1;
+    pr.in_events = ev ? ev : &none.list;
+    pr.out_events = &outEvents;
+    a.p->process(a.p, &pr);
+    a.t += n;
+    double s = 0;
+    for (uint32_t i = 0; i < n; i++)
+        s += 0.5 * ((double)l[i] * l[i] + (double)r[i] * r[i]);
+    return std::sqrt(s / n);
+}
+static double dB(double x) { return 20 * std::log10(x + 1e-12); }
+
+/* the project's MIDI IN (G_ROUTE: 0 CH1-4, 1 SEL, 2 CH5-8, 3 CH9-12, 4 CH13-16) rewritten inside a saved state: the
+ * byte at g[G_ROUTE] (offset 8 + 2 * 14) and the FNV-1a trailer (firmware project.c proj_pack) */
+static std::string b64dec(const std::string& s)
+{
+    static const std::string A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string o;
+    uint32_t v = 0;
+    int bits = 0;
+    for (char c : s) {
+        size_t k = A.find(c);
+        if (k == std::string::npos)
+            continue;
+        v = v << 6 | (uint32_t)k;
+        if ((bits += 6) >= 8)
+            o += (char)(v >> (bits -= 8) & 0xFF);
+    }
+    return o;
+}
+static std::string b64enc(const std::string& s)
+{
+    static const char* A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string o;
+    size_t i = 0;
+    for (; i + 2 < s.size(); i += 3) {
+        uint32_t v = (uint8_t)s[i] << 16 | (uint8_t)s[i + 1] << 8 | (uint8_t)s[i + 2];
+        o += A[v >> 18]; o += A[v >> 12 & 63]; o += A[v >> 6 & 63]; o += A[v & 63];
+    }
+    if (i + 1 == s.size()) {
+        uint32_t v = (uint8_t)s[i] << 16;
+        o += A[v >> 18]; o += A[v >> 12 & 63]; o += "==";
+    } else if (i + 2 == s.size()) {
+        uint32_t v = (uint8_t)s[i] << 16 | (uint8_t)s[i + 1] << 8;
+        o += A[v >> 18]; o += A[v >> 12 & 63]; o += A[v >> 6 & 63]; o += '=';
+    }
+    return o;
+}
+static std::string withRoute(const std::string& state, uint8_t route)
+{
+    std::string raw = b64dec(project(state));
+    if (raw.size() != 3840)
+        return "";
+    raw[36] = (char)route;
+    raw[37] = 0;
+    uint32_t h = 0x811C9DC5u;
+    for (size_t i = 0; i + 4 < raw.size(); i++)
+        h = (h ^ (uint8_t)raw[i]) * 16777619u;
+    std::memcpy(&raw[raw.size() - 4], &h, 4);
+    return withProject(state, b64enc(raw));
+}
+
+/* GB-001: four layered slots, an 8-note chord, then at one frame its 8 note-offs and a 9-note chord (68 layered
+ * events, more than the firmware's 64-entry MIDI ring): chord B must sound (the voice budget of 12 steals, it never
+ * goes silent) */
+static void test_gb001_chord_change_four_slots()
+{
+    static const uint8_t A[8] = {48, 52, 55, 59, 62, 65, 69, 72}, B[9] = {50, 53, 57, 60, 64, 67, 71, 74, 77};
+    for (uint32_t nb : {9u, 16u}) {                           /* 16: the audit's 128-event case (16 offs + 16 ons) */
+        Inst a;
+        CHECK(a.p);
+        enableSlots(a, 0xF);
+        a.runFor(0.1);
+        MixedEvents on;
+        for (uint32_t k = 0; k < (nb == 9 ? 8u : 16u); k++) {
+            const uint8_t m[3] = {0x90, (uint8_t)(nb == 9 ? A[k] : 40 + k), 100};
+            on.midiAt(0, m);
+        }
+        a.run(512, nullptr, &on.list);
+        a.runFor(0.5);
+        MixedEvents ch;
+        for (uint32_t k = 0; k < (nb == 9 ? 8u : 16u); k++) {
+            const uint8_t m[3] = {0x80, (uint8_t)(nb == 9 ? A[k] : 40 + k), 0};
+            ch.midiAt(100, m);
+        }
+        for (uint32_t k = 0; k < nb; k++) {
+            const uint8_t m[3] = {0x90, (uint8_t)(nb == 9 ? B[k] : 60 + k), 100};
+            ch.midiAt(100, m);
+        }
+        a.run(512, nullptr, &ch.list);
+        a.runFor(3.0);                                        /* a panic's release tails are gone by now */
+        const double r = rmsBlock(a, 4800);                   /* chord B, held, 3 s on */
+        std::fprintf(stderr, "    chord change 4 slots, %u notes: chord B %.1f dBFS\n", nb, dB(r));
+        CHECK(dB(r) > -28);
+    }
+}
+
+/* GB-001: a held note survives a same-frame controller burst (1 slot + 70 CC1; 4 slots + 17 CC1) */
+static void test_gb001_cc_burst_keeps_note()
+{
+    for (auto c : {std::pair<uint32_t, uint32_t>{1u, 70u}, {0xFu, 17u}, {0xFu, 70u}}) {
+        Inst a;
+        CHECK(a.p);
+        enableSlots(a, c.first);
+        a.run(512, NOTE_ON);
+        a.runFor(0.3);
+        const double before = rmsBlock(a, 4800);
+        MixedEvents ev;
+        for (uint32_t k = 0; k < c.second; k++) {
+            const uint8_t m[3] = {0xB0, 1, (uint8_t)(k & 127)};
+            ev.midiAt(10, m);
+        }
+        a.run(512, nullptr, &ev.list);
+        a.runFor(3.0);
+        const double after = rmsBlock(a, 4800);
+        std::fprintf(stderr, "    mask %x + %u CC1: %.1f -> %.1f dBFS\n", c.first, c.second, dB(before), dB(after));
+        CHECK(dB(after) > dB(before) - 6);
+    }
+}
+
+/* GB-001: the note-offs of a dense burst still arrive (no stuck notes after a burst that needs a drain) */
+static void test_gb001_burst_then_release_silent()
+{
+    Inst a;
+    CHECK(a.p);
+    enableSlots(a, 0xF);
+    MixedEvents on;
+    for (uint32_t k = 0; k < 16; k++) {
+        const uint8_t m[3] = {0x90, (uint8_t)(48 + k), 100};
+        on.midiAt(0, m);
+    }
+    for (uint32_t k = 0; k < 40; k++) {
+        const uint8_t m[3] = {0xB0, 1, (uint8_t)k};
+        on.midiAt(0, m);
+    }
+    a.run(512, nullptr, &on.list);
+    a.runFor(0.3);
+    MixedEvents off;
+    for (uint32_t k = 0; k < 16; k++) {
+        const uint8_t m[3] = {0x80, (uint8_t)(48 + k), 0};
+        off.midiAt(0, m);
+    }
+    a.run(512, nullptr, &off.list);
+    a.runFor(9.0);                                            /* four slots + mod wheel: delay tails ~8 s to the floor */
+    const double r = rmsBlock(a, 4800);
+    std::fprintf(stderr, "    16 notes x 4 slots + 40 CC1, all released: %.1f dBFS 9 s on\n", dB(r));
+    CHECK(dB(r) < -90);                                       /* the idle floor (TAPE hiss) is ~ -97 dBFS */
+}
+
+/* GB-003: every MIDI IN value of the project plays every enabled slot from any channel. Slots 1 and 2 are on; one
+ * of them is muted by its Level, so each layer is heard on its own (a collapse onto one track, SEL's, is silence) */
+static void test_gb003_route_plays_all_slots()
+{
+    static const char* NAME[5] = {"CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16"};
+    double ref[2] = {0, 0};
+    for (uint8_t route = 0; route < 5; route++) {
+        for (uint32_t heard = 0; heard < 2; heard++) {
+            for (uint8_t srcCh : {0, 5, 15}) {
+                Inst a;
+                CHECK(a.p);
+                a.runFor(0.1);
+                std::string s = withRoute(a.save(), route);
+                CHECK(!s.empty());
+                CHECK(a.load(s));
+                MixedEvents ev;
+                ev.param(paramId(a, 1), 1);
+                ev.param(paramId(a, 10), 1);
+                ev.param(paramId(a, 2 + 9 * (1 - heard)), 0);   /* the other slot's Level: 0 */
+                a.run(512, nullptr, &ev.list);
+                const uint8_t on[3] = {(uint8_t)(0x90 | srcCh), 60, 100};
+                a.run(512, on);
+                a.runFor(0.3);
+                const double r = rmsBlock(a, 4800);
+                if (route == 0 && srcCh == 0)
+                    ref[heard] = r;
+                std::fprintf(stderr, "    MIDI IN %-7s ch%-2u slot %u alone: %.1f dBFS\n", NAME[route], srcCh + 1,
+                             heard + 1, dB(r));
+                CHECK(dB(r) > dB(ref[heard]) - 1.0);              /* as loud as with CH1-4 */
+                CHECK(dB(r) < dB(ref[heard]) + 1.0);
+                CHECK((uint8_t)b64dec(project(a.save()))[36] == route);   /* the project's MIDI IN is kept */
+            }
+        }
+    }
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -602,6 +808,10 @@ int main()
         {"test_disable_slot_silences_held_notes", test_disable_slot_silences_held_notes},
         {"test_overlapping_note_ownership_clap", test_overlapping_note_ownership_clap},
         {"test_truncation_preserves_note_off", test_truncation_preserves_note_off},
+        {"test_gb001_chord_change_four_slots", test_gb001_chord_change_four_slots},
+        {"test_gb001_cc_burst_keeps_note", test_gb001_cc_burst_keeps_note},
+        {"test_gb001_burst_then_release_silent", test_gb001_burst_then_release_silent},
+        {"test_gb003_route_plays_all_slots", test_gb003_route_plays_all_slots},
     };
     for (auto& x : t) {
         int f = fails;

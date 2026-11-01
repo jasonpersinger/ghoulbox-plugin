@@ -20,7 +20,21 @@ static void gb_calibration_refused(void);
 #define GB_DT_ ((void)0)
 #define dream_tick(...) GB_DT_ ## __VA_ARGS__
 
+/* GB-003: the plugin's slots are the routing (host/midi_layer: slot t plays on channel t, from any host channel), so
+ * the firmware's MIDI IN (G_ROUTE) must read CH1-4 where MIDI is taken in: in the audio ISR (events_block, midi_event,
+ * midi_track). Any other value muted the slots (CH5-8 .. CH13-16) or played them all on the selected track (SEL).
+ * The project keeps its own value, which the menu shows and the state saves: it reads CH1-4 only while the ISR runs
+ * (the menu, the only writer, is the main loop's). `fm1_alnk0_irq(void)` -> its definition, `fm1_alnk0_irq()` ->
+ * gb_isr() */
+static void gb_isr(void);
+#define GB_ISR_void gb_fw_alnk0_irq(void)
+#define GB_ISR_ gb_isr()
+#define fm1_alnk0_irq(...) GB_ISR_ ## __VA_ARGS__
+
 #include "web/emu/felucca_web.c"
+#undef fm1_alnk0_irq
+#undef GB_ISR_
+#undef GB_ISR_void
 #undef dream_tick
 #undef GB_DT_
 #undef GB_DT_void
@@ -33,6 +47,14 @@ static void gb_calibration_refused(void);
 
 typedef char gb_chk_buttons[GB_NBTN == NB ? 1 : -1];
 typedef char gb_chk_encoders[GB_NENC == NE ? 1 : -1];
+
+static void gb_isr(void)
+{
+    const int16_t route = song.g[G_ROUTE];
+    song.g[G_ROUTE] = 0;                                /* CH1-4 */
+    gb_fw_alnk0_irq();
+    song.g[G_ROUTE] = route;
+}
 
 static void gb_calibration_refused(void)
 {
@@ -102,13 +124,40 @@ void gb_boot(void)
     usb.config = 1;                             /* the header's battery: external power (ui_draw.c batt_shown) */
 }
 
+/* GB-001: the firmware drains its MIDI ring (usb.c, MQ = 64) once per I2S half, in events_block; its overflow policy,
+ * made for a broken USB stream, throws the whole ring away and releases every note. The plugin is a local producer
+ * that layers each host message onto up to four slots, so a dense same-frame burst would trip it. Instead, a full
+ * ring runs the device ahead to its next half (events_block drains the ring there): the frames rendered meanwhile wait
+ * in the emulator's output ring, where gb_render takes them first, so the output stays continuous and the rest of the
+ * burst lands one half (2.9 ms) later. Bounded: at most GB_DRAIN_MS device milliseconds per drain, and never past
+ * the output ring's room (then the firmware's own overflow policy stands). Counters for the tests. */
+#define GB_DRAIN_MS 8u                                  /* a half is due every 2.9 ms */
+#define GB_DRAIN_ROOM (RING - 1024u - 2u * HALF_FRAMES) /* buffered frames above this: no drain (web_render's n <= 1024) */
+static uint32_t gb_midi_drains, gb_midi_no_room, gb_midi_refused;
+static void gb_midi_make_room(void)
+{
+    uint32_t k;
+    if (mi_w - mi_r < MQ || midi_in_overflow)
+        return;
+    if (ring_w - ring_r > GB_DRAIN_ROOM) {
+        gb_midi_no_room++;
+        return;
+    }
+    for (k = 0; k < GB_DRAIN_MS && mi_r != mi_w; k++)
+        web_ms();
+    gb_midi_drains++;
+}
+
 uint32_t gb_midi(uint8_t status, uint8_t d1, uint8_t d2)
 {
-    if (status == 0xF8u)
-        return (uint32_t)midi_enqueue(0xFu | (uint32_t)status << 8, 1u);     /* usb.c's path for a real-time byte */
-    if (status < 0x80u || status >= 0xF0u)
+    uint32_t ok;
+    if (status != 0xF8u && (status < 0x80u || status >= 0xF0u))
         return 1;
-    return web_midi(status, d1, d2);
+    gb_midi_make_room();
+    ok = status == 0xF8u ? (uint32_t)midi_enqueue(0xFu | (uint32_t)status << 8, 1u)   /* usb.c's real-time path */
+                         : web_midi(status, d1, d2);
+    gb_midi_refused += !ok;
+    return ok;
 }
 
 void gb_master(uint32_t v) { web_master(v); }
