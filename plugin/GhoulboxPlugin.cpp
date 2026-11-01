@@ -11,6 +11,7 @@
 #include "knob_math.h"
 #include "library.h"
 #include "midi_layer.h"
+#include "pi_mutex.h"
 #include "ui_bridge.h"
 #include "ui_link.h"
 #include <atomic>
@@ -163,7 +164,7 @@ protected:
         std::vector<uint8_t> b(api().state_size());
         uint32_t n;
         {
-            std::lock_guard<std::mutex> g(coreMutex_);
+            std::lock_guard<PiMutex> g(coreMutex_);
             const_cast<GhoulboxPlugin*>(this)->reconcileStaleParams();
             n = api().state_save(b.data(), (uint32_t)b.size());
         }
@@ -178,7 +179,7 @@ protected:
             return;
         }
         std::vector<uint8_t> b = d_getChunkFromBase64String(value);
-        std::lock_guard<std::mutex> g(coreMutex_);
+        std::lock_guard<PiMutex> g(coreMutex_);
         if (!b.empty() && api().state_load(b.data(), (uint32_t)b.size())) {
             api().clock_external(true);
             midiLayer_.reset();
@@ -191,7 +192,7 @@ protected:
     {
         if (!engine_)
             return;
-        std::lock_guard<std::mutex> g(coreMutex_);
+        std::lock_guard<PiMutex> g(coreMutex_);
         engine_->setHostRate(rate);
         clock_.reset();
     }
@@ -203,7 +204,7 @@ protected:
             std::memset(out[1], 0, frames * sizeof(float));
             return;
         }
-        std::lock_guard<std::mutex> g(coreMutex_);
+        std::lock_guard<PiMutex> g(coreMutex_);
         applyParams();
         bridge_->drain([this](const UiInput& in) { applyInput(in); });
         clockEvents_.clear();
@@ -421,7 +422,7 @@ private:
     std::unique_ptr<UiBridge> bridge_;                  // the window's way in (with the core)
     gb_view view_{};                                    // (audio thread) the view being published
     String heldState_;                                  // the project's state, while there is no core to hold it
-    mutable std::mutex coreMutex_;
+    mutable PiMutex coreMutex_;                         // (GB-008: priority inheritance)
     ClockGen clock_;
     MidiLayer midiLayer_;
     uint32_t slotEnabledMask_ = 1u;
