@@ -756,6 +756,99 @@ static void test_gb003_route_plays_all_slots()
     }
 }
 
+/* GB-002: switching slots off and on around held, released, pedalled and stolen notes never leaves a note sounding,
+ * never starts one by itself, never bursts. Each case ends with every key and the pedal up; 9 s later (four slots'
+ * longest tail) the output is at the idle floor */
+struct Run {                                               /* an instance with a running peak */
+    Inst a;
+    float pk = 0;
+    void block(MixedEvents* ev = nullptr, uint32_t n = 512) { pk = std::max(pk, a.run(n, nullptr, ev ? &ev->list : nullptr)); }
+    void wait(double s) { for (uint32_t k = 0; k < s * RATE; k += 4096) pk = std::max(pk, a.run(4096)); }
+};
+static void slotParam(MixedEvents& ev, Inst& a, uint32_t t, bool on) { ev.param(paramId(a, 1 + 9 * t), on ? 1 : 0); }
+static void msg(MixedEvents& ev, uint8_t st, uint8_t d1, uint8_t d2, uint32_t at = 0)
+{
+    const uint8_t m[3] = {st, d1, d2};
+    ev.midiAt(at, m);
+}
+static double floorAfter(Run& r)
+{
+    r.wait(9.0);
+    return dB(rmsBlock(r.a, 4800));
+}
+static void test_gb002_slot_toggle_matrix()
+{
+    double q;
+    { Run r; CHECK(r.a.p);                                  /* (a) off during the attack (one block after the note) */
+      MixedEvents on; msg(on, 0x90, 60, 100); r.block(&on);
+      MixedEvents off; slotParam(off, r.a, 0, false); r.block(&off);
+      MixedEvents up; msg(up, 0x80, 60, 0); r.block(&up);
+      q = floorAfter(r); std::fprintf(stderr, "    (a) attack: %.1f dBFS\n", q); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (b) off during the release */
+      MixedEvents on; msg(on, 0x90, 60, 100); r.block(&on); r.wait(0.3);
+      MixedEvents up; msg(up, 0x80, 60, 0); r.block(&up); r.wait(0.05);
+      MixedEvents off; slotParam(off, r.a, 0, false); r.block(&off);
+      q = floorAfter(r); std::fprintf(stderr, "    (b) release: %.1f dBFS\n", q); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (c) pedal down: off, keys and pedal up afterwards */
+      MixedEvents on; msg(on, 0xB0, 64, 127); msg(on, 0x90, 60, 100); msg(on, 0x90, 64, 100); r.block(&on); r.wait(0.3);
+      MixedEvents up; msg(up, 0x80, 60, 0); msg(up, 0x80, 64, 0); r.block(&up); r.wait(0.3);   /* sustained */
+      MixedEvents off; slotParam(off, r.a, 0, false); r.block(&off); r.wait(0.5);
+      MixedEvents ped; msg(ped, 0xB0, 64, 0); r.block(&ped);
+      q = floorAfter(r); std::fprintf(stderr, "    (c) pedal held: %.1f dBFS\n", q); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (d) three of four off at once; slot 1 plays on */
+      enableSlots(r.a, 0xF);
+      MixedEvents on; msg(on, 0x90, 60, 100); r.block(&on); r.wait(0.3);
+      MixedEvents off; for (uint32_t t = 1; t < 4; t++) slotParam(off, r.a, t, false); r.block(&off);
+      r.wait(6.0);
+      const double held = dB(rmsBlock(r.a, 4800));
+      MixedEvents up; msg(up, 0x80, 60, 0); r.block(&up);
+      q = floorAfter(r); std::fprintf(stderr, "    (d) 3 slots off: slot 1 held %.1f, after %.1f dBFS\n", held, q);
+      CHECK(held > -30); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (e) on again while a key is held: no retrigger */
+      MixedEvents lv; lv.param(paramId(r.a, 2), 0); r.block(&lv);   /* slot 1 muted: slot 2 alone is heard */
+      MixedEvents on; msg(on, 0x90, 60, 100); r.block(&on); r.wait(0.3);
+      MixedEvents en; slotParam(en, r.a, 1, true); r.block(&en); r.wait(0.3);
+      const double none = dB(rmsBlock(r.a, 4800));
+      MixedEvents b; msg(b, 0x90, 67, 100); r.block(&b); r.wait(0.3);   /* a new key plays it */
+      const double played = dB(rmsBlock(r.a, 4800));
+      MixedEvents up; msg(up, 0x80, 60, 0); msg(up, 0x80, 67, 0); r.block(&up);
+      q = floorAfter(r);
+      std::fprintf(stderr, "    (e) re-enable: held key %.1f, new key %.1f, after %.1f dBFS\n", none, played, q);
+      CHECK(none < -80); CHECK(played > -50); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (f) 60 toggles with keys coming and going */
+      enableSlots(r.a, 0x3);
+      for (uint32_t k = 0; k < 60; k++) {
+          MixedEvents ev; slotParam(ev, r.a, 1 + k % 3, k & 1);
+          msg(ev, 0x90, (uint8_t)(48 + k % 24), 100, 10); msg(ev, 0x80, (uint8_t)(48 + (k + 21) % 24), 0, 300);
+          r.block(&ev);
+      }
+      MixedEvents up; for (uint8_t n = 48; n < 72; n++) msg(up, 0x80, n, 0); r.block(&up);
+      q = floorAfter(r); std::fprintf(stderr, "    (f) 60 toggles: %.1f dBFS, peak %.2f\n", q, r.pk); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* (g) dense: 16 keys on 4 slots (stealing), toggles */
+      enableSlots(r.a, 0xF);
+      MixedEvents on; for (uint8_t n = 48; n < 64; n++) msg(on, 0x90, n, 100); r.block(&on); r.wait(0.2);
+      MixedEvents off; slotParam(off, r.a, 2, false); msg(off, 0x90, 70, 100); r.block(&off);
+      MixedEvents en; slotParam(en, r.a, 2, true); msg(en, 0x90, 72, 100); r.block(&en); r.wait(0.2);
+      MixedEvents up; for (uint8_t n = 48; n < 64; n++) msg(up, 0x80, n, 0); msg(up, 0x80, 70, 0); msg(up, 0x80, 72, 0);
+      r.block(&up);
+      q = floorAfter(r); std::fprintf(stderr, "    (g) dense + stealing: %.1f dBFS\n", q); CHECK(q < -90); }
+    for (int order = 0; order < 2; order++) {               /* (h) off in the same block as the note-off, either side */
+      Run r; CHECK(r.a.p);
+      MixedEvents on; msg(on, 0x90, 60, 100); r.block(&on); r.wait(0.3);
+      MixedEvents ev;
+      if (order) { msg(ev, 0x80, 60, 0, 0); slotParam(ev, r.a, 0, false); } else { slotParam(ev, r.a, 0, false); msg(ev, 0x80, 60, 0, 0); }
+      r.block(&ev);
+      MixedEvents en; slotParam(en, r.a, 0, true); r.block(&en);  /* and on again: nothing comes back */
+      q = floorAfter(r); std::fprintf(stderr, "    (h) same block, order %d: %.1f dBFS\n", order, q); CHECK(q < -90); }
+    { Run r; CHECK(r.a.p);                                  /* no burst: a toggle never jumps above the played level */
+      enableSlots(r.a, 0xF);
+      MixedEvents on; for (uint8_t n : {48, 55, 60}) msg(on, 0x90, n, 100); r.block(&on); r.wait(0.5);
+      const float played = r.pk;
+      for (uint32_t k = 0; k < 16; k++) { MixedEvents ev; slotParam(ev, r.a, k % 4, k & 4); r.block(&ev); }
+      std::fprintf(stderr, "    no burst: played peak %.3f, peak while toggling %.3f\n", played, r.pk);
+      CHECK(r.pk <= played * 1.05f); }
+}
+
 static int coreTemps()
 {
     const char* x = std::getenv("XDG_RUNTIME_DIR");
@@ -812,6 +905,7 @@ int main()
         {"test_gb001_cc_burst_keeps_note", test_gb001_cc_burst_keeps_note},
         {"test_gb001_burst_then_release_silent", test_gb001_burst_then_release_silent},
         {"test_gb003_route_plays_all_slots", test_gb003_route_plays_all_slots},
+        {"test_gb002_slot_toggle_matrix", test_gb002_slot_toggle_matrix},
     };
     for (auto& x : t) {
         int f = fails;
