@@ -31,10 +31,9 @@ PLAYING IT
   keyboard input to plug-in).
 
 KNOWN ISSUES
-  Latency: at any host sample rate other than 44.1 kHz, GHOULBOX's sound starts about 1.45 ms after the MIDI
-  note that plays it. The delay is the same at every such rate. At 44.1 kHz there is no delay. GHOULBOX does not
-  report this delay to your DAW, so your DAW does not compensate for it. All GHOULBOX instances share the same
-  delay, so they stay aligned with each other.
+  Latency: at host sample rates of 48, 88.2, 96 and 192 kHz, GHOULBOX's sound starts about 1.45 ms after the MIDI
+  note that plays it (measured). At 44.1 kHz GHOULBOX adds no latency. GHOULBOX does not report this delay to your
+  DAW, so your DAW does not compensate for it.
 
 SUPPORT
   support@messy.quest
