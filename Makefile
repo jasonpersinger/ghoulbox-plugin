@@ -5,7 +5,10 @@ GEN := $(FEL)/build/gen
 # as native_check (the Global Constraints): the firmware compiled unmodified
 SPEEX_DEFS := -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Ihost -Icore $(SPEEX_DEFS) -Iexternal/speex
-CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL)
+# -fwrapv (GB-010): the firmware's phase sums and fixed-point products overflow int on purpose (fm6_core.c, dsp.c,
+# fx.c, eng_gurdy.c: UBSan); wrapping is what GCC emits today, and what the FM-1 does. The flag makes it the defined
+# result, never an optimiser's assumption. The core only: test-identical still compares it with native_check without it
+CORE_CFLAGS := -O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$(GEN) -I$(FEL)/firmware/src -I$(FEL) -fwrapv
 
 .PHONY: gen core plugin install test test-identical test-core test-loader test-engine test-clock test-library test-bridge test-layer test-ui test-plugin dist test-dist
 gen: $(GEN)
