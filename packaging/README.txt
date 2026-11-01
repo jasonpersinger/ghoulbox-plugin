@@ -31,10 +31,11 @@ PLAYING IT
   keyboard input to plug-in).
 
 KNOWN ISSUES
-  Latency: GHOULBOX handles MIDI in steps of about 2.9 ms, so at every sample rate a note starts between 0 and about
-  3 ms after it arrives. At host sample rates other than 44.1 kHz the sound starts a further delay later (measured):
-  about 1.45 ms at 48, 88.2, 96, 176.4 and 192 kHz, about 2.1 ms at 32 kHz and about 2.9 ms at 22.05 kHz. GHOULBOX
-  does not report latency to your DAW, so your DAW does not compensate for it.
+  Latency: GHOULBOX handles MIDI in steps of about 2.9 ms, so the start of a note can vary by up to about 3 ms from
+  one note to the next. Each sound also has its own attack time. At host sample rates other than 44.1 kHz the sound
+  starts a further delay later (measured): about 1.45 ms at 48, 88.2, 96, 176.4 and 192 kHz, about 2 ms at 32 kHz
+  and about 2.9 ms at 22.05 kHz. GHOULBOX does not report latency to your DAW, so your DAW does not compensate for
+  it.
   MIDI: if a host sends more than 512 MIDI events in one audio block, events past the 512th are dropped by the
   plug-in framework. If a note-off is among them, the note may keep sounding.
 
