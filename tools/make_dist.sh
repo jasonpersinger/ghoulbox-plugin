@@ -35,6 +35,9 @@ cp external/DPF/dgl/src/pugl-upstream/COPYING $L/ISC-pugl.txt
 cp external/DPF/dgl/src/nanovg/LICENSE.txt $L/Zlib-NanoVG.txt
 cp external/speex/COPYING $L/BSD-speexdsp.txt
 sed -n '1,/\*\//p' external/DPF/distrho/extra/sofd/libsofd.c > $L/MIT-libsofd.txt
+cp packaging/licenses/MIT-CLAP.txt $L/MIT-CLAP.txt                 # CLAP 1.1.1's headers, in DPF (GB-019)
+sed -n '1,/\*\//p' external/DPF/distrho/src/lv2/lv2.h > $L/ISC-LV2.txt  # LV2's headers, in DPF
+cp external/DPF/dgl/src/resources/LICENSE-DejaVuSans.ttf.txt $L/DejaVuSans-LICENSE.txt   # DPF's built-in UI font
 
 # the source: this repo and its submodules at their commits, without git metadata
 T=$(mktemp -d)

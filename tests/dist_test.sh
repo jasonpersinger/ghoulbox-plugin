@@ -17,11 +17,14 @@ for f in CLAP/ghoulbox.clap CLAP/libghoulbox_core.so \
          LICENSES/GPL-3.0.txt LICENSES/OFL-VT323.txt LICENSES/OFL-PirataOne.txt LICENSES/MIT-Fukiai.txt \
          LICENSES/MIT-DaisySP.txt LICENSES/MIT-Rings.txt LICENSES/Apache-2.0-msfa.txt LICENSES/ISC-DPF.txt \
          LICENSES/ISC-pugl.txt LICENSES/Zlib-NanoVG.txt LICENSES/MIT-libsofd.txt LICENSES/BSD-speexdsp.txt \
-         LICENSES/CC0-samples-ATTRIBUTION.txt; do
+         LICENSES/CC0-samples-ATTRIBUTION.txt LICENSES/MIT-CLAP.txt LICENSES/ISC-LV2.txt LICENSES/DejaVuSans-LICENSE.txt; do
     [ -e "$R/$f" ] || fail "missing $f"
 done
 [ -x "$R/install.sh" ] || fail "install.sh is not executable"
 grep -q "support@messy.quest" "$R/README.txt" || fail "README has no support address"
+grep -q "Alexandre BIQUE" "$R/LICENSES/MIT-CLAP.txt" || fail "the CLAP licence is not CLAP's"
+grep -q "Steve Harris, David Robillard" "$R/LICENSES/ISC-LV2.txt" || fail "the LV2 licence is not LV2's"
+grep -q "Bitstream" "$R/LICENSES/DejaVuSans-LICENSE.txt" || fail "the DejaVu licence is not DejaVu's"
 # every binary runs on glibc 2.34 (Ubuntu 22.04, Debian 12) or newer
 for b in $(find $R -name '*.so' -o -name '*.clap'); do
     top=$(objdump -T "$b" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/GLIBC_//' | sort -V | tail -1)

@@ -19,6 +19,11 @@ PLAYING IT
   GHOULBOX has four layered sound slots. Incoming MIDI plays every enabled slot at once, so one keyboard
   plays a stack of up to four sounds. Slot 1 is on by default; toggle slots on and off with the ENABLED/OFF
   button on each slot across the bottom.
+  Voices: GHOULBOX plays 12 voices in all, shared by the four slots, as on the device. Each enabled slot uses
+  one voice per note, so with four slots on, three-note chords use all 12; further notes take over the oldest
+  voices. One slot on gives 12-note polyphony.
+  MIDI IN (MENU > MIDI): the slots take MIDI from every channel whatever this setting says. It is kept in your
+  project as you set it.
   It follows your DAW's tempo. Your project saves GHOULBOX's sounds and settings; SAVE slots are shared by every
   GHOULBOX on your computer (~/.local/share/GHOULBOX).
   In the window, right-click a button to hold it down (for combinations). The computer keyboard plays the device
