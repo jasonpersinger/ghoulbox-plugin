@@ -13,7 +13,11 @@ include ../external/DPF/Makefile.plugins.mk
 BUILD_CXX_FLAGS += -std=gnu++17 -I../host -I../core -I../ui -I../build/gen-ui -I../external/speex -DOUTSIDE_SPEEX -DFLOATING_POINT -DRANDOM_PREFIX=ghoulbox_speex
 LINK_FLAGS += ../build/resample.o -ldl -lpthread
 # older Linux (plugin/glibc_compat.c): these resolve to their glibc 2.2.5 versions
-LINK_FLAGS += -Wl,--wrap=atan2f -Wl,--wrap=acosf -Wl,--wrap=__isoc23_strtol
+LINK_FLAGS += -Wl,--wrap=atan2f -Wl,--wrap=acosf -Wl,--wrap=__isoc23_strtol -Wl,--wrap=__isoc23_strtoul
+# GB-004: libstdc++ inside the binary (GCC Runtime Library Exception), its symbols kept local: no libstdc++ version
+# floor (GCC 14+ emits __cxa_call_terminate@CXXABI_1.3.15, newer than Ubuntu 22.04 / Debian 12). libgcc stays the
+# system's libgcc_s.so.1: a static libgcc's unwinder needs glibc 2.35's _dl_find_object
+LINK_FLAGS += -static-libstdc++ -Wl,--exclude-libs,ALL
 
 TARGETS = clap vst3 lv2                    # (lv2: the DSP and the window in one binary, for direct access)
 

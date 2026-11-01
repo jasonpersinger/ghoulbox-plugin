@@ -27,6 +27,23 @@ for b in $(find $R -name '*.so' -o -name '*.clap'); do
     top=$(objdump -T "$b" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/GLIBC_//' | sort -V | tail -1)
     [ "$(printf '%s\n2.34\n' "$top" | sort -V | tail -1)" = "2.34" ] || fail "$b needs glibc $top"
 done
+# GB-004: and on their C++ runtime: none needed (libstdc++ is linked in), libgcc_s no newer than GCC 7's
+# (Ubuntu 22.04 / Debian 12 ship GCC 12's, Fedora 35 GCC 11's); every exported symbol is the format's entry point
+ceiling() {   # file, version prefix, highest allowed
+    top=$(objdump -T "$1" | grep -oE "$2_[0-9]+(\.[0-9]+)*" | sed "s/$2_//" | sort -V | tail -1)
+    [ -z "$top" ] || [ "$(printf '%s\n%s\n' "$top" "$3" | sort -V | tail -1)" = "$3" ] || fail "$1 needs $2_$top"
+}
+for b in $(find $R -name '*.so' -o -name '*.clap'); do
+    readelf -d "$b" | grep -q 'NEEDED.*libstdc++' && fail "$b needs the system's libstdc++"
+    ceiling "$b" GLIBCXX 3.4.29
+    ceiling "$b" CXXABI 1.3.13
+    ceiling "$b" GCC 7.0.0
+done
+[ "$(nm -D --defined-only $R/CLAP/ghoulbox.clap | awk '{print $3}')" = "clap_entry" ] || fail "the CLAP exports more"
+[ "$(nm -D --defined-only $R/VST3/ghoulbox.vst3/Contents/x86_64-linux/ghoulbox.so | awk '{print $3}' | tr '\n' ' ')" = \
+  "GetPluginFactory ModuleEntry ModuleExit " ] || fail "the VST3 exports more"
+[ "$(nm -D --defined-only $R/LV2/ghoulbox.lv2/ghoulbox.so | awk '{print $3}' | tr '\n' ' ')" = \
+  "lv2_descriptor lv2_generate_ttl lv2ui_descriptor " ] || fail "the LV2 exports more"
 # the source: complete (the submodules' files too), no git metadata
 S=$(tar -tzf "$R/ghoulbox-$V-source.tar.gz")
 for f in Makefile core/ghoulbox_core.c plugin/GhoulboxUI.cpp external/Felucca/firmware/src/main.c \
