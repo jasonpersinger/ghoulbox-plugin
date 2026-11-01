@@ -30,9 +30,18 @@ PLAYING IT
   too once you click its screen, if your DAW passes keys to plugins (REAPER: the FX window's + menu > Send all
   keyboard input to plug-in).
 
+KNOWN ISSUES
+  Latency: at any host sample rate other than 44.1 kHz, GHOULBOX's sound starts about 1.45 ms after the MIDI
+  note that plays it. The delay is the same at every such rate. At 44.1 kHz there is no delay. GHOULBOX does not
+  report this delay to your DAW, so your DAW does not compensate for it. All GHOULBOX instances share the same
+  delay, so they stay aligned with each other.
+
 SUPPORT
   support@messy.quest
 
 LICENCE
+  Copyright (C) 2026 MESSYQUEST.
   GHOULBOX is free software under the GNU General Public License, version 3 (LICENSES/GPL-3.0.txt). Its complete
   source code is included: ghoulbox-@VERSION@-source.tar.gz. The licences of the parts it includes are in LICENSES/.
+  GHOULBOX is an independent project. It is not affiliated with, endorsed by or sponsored by M-Vave. The names
+  M-Vave and FM-1 are used only to identify the hardware the GHOULBOX firmware was written for.

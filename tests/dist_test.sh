@@ -22,6 +22,8 @@ for f in CLAP/ghoulbox.clap CLAP/libghoulbox_core.so \
 done
 [ -x "$R/install.sh" ] || fail "install.sh is not executable"
 grep -q "support@messy.quest" "$R/README.txt" || fail "README has no support address"
+grep -q "Copyright (C) 2026 MESSYQUEST" "$R/README.txt" || fail "README has no GHOULBOX copyright line"
+grep -q "not affiliated with, endorsed by or sponsored by M-Vave" "$R/README.txt" || fail "README has no FM-1 note"
 grep -q "Alexandre BIQUE" "$R/LICENSES/MIT-CLAP.txt" || fail "the CLAP licence is not CLAP's"
 grep -q "Steve Harris, David Robillard" "$R/LICENSES/ISC-LV2.txt" || fail "the LV2 licence is not LV2's"
 grep -q "Bitstream" "$R/LICENSES/DejaVuSans-LICENSE.txt" || fail "the DejaVu licence is not DejaVu's"
