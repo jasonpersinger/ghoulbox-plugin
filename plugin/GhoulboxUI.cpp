@@ -387,6 +387,8 @@ private:
                 push(UiInput::Button, b, 0);
         if (keys_)
             push(UiInput::Keys, 0, 0);
+        if (bridge_)
+            bridge_->requestReleaseAll();
     }
 
     void say(float x, float y, const char* str, float size, const Color& c, int align, FontId font = -1)

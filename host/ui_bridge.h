@@ -20,6 +20,7 @@ public:
     static constexpr uint32_t kScreen = 240 * 240;
 
     bool push(const UiInput& in);   // UI thread (one producer); false = full, dropped
+    void requestReleaseAll();       // UI thread or any thread: release all buttons and keys on next drain
 
     // audio thread (one consumer): the queued inputs in order, stopping before a Button input for a label already
     // changed in this drain (a press and its release never reach the core in one block)
@@ -38,6 +39,31 @@ public:
             apply(in);
         }
         tail_.store(t, std::memory_order_release);
+
+        if (releaseAll_.exchange(false, std::memory_order_acq_rel)) {
+            pendingReleaseButtons_.store(0, std::memory_order_release);
+            pendingReleaseKeys_.store(false, std::memory_order_release);
+            for (int b = 0; b < GB_NBTN; b++) {
+                if (!(changed & (1u << b)))
+                    apply(UiInput{UiInput::Button, b, 0});
+                else
+                    pendingReleaseButtons_.fetch_or(1u << b, std::memory_order_release);
+            }
+            apply(UiInput{UiInput::Keys, 0, 0});
+        } else {
+            uint32_t rel = pendingReleaseButtons_.load(std::memory_order_acquire);
+            if (rel) {
+                for (int b = 0; b < GB_NBTN; b++) {
+                    if ((rel & (1u << b)) && !(changed & (1u << b))) {
+                        pendingReleaseButtons_.fetch_and(~(1u << b), std::memory_order_release);
+                        apply(UiInput{UiInput::Button, b, 0});
+                    }
+                }
+            }
+            if (pendingReleaseKeys_.exchange(false, std::memory_order_acq_rel)) {
+                apply(UiInput{UiInput::Keys, 0, 0});
+            }
+        }
     }
 
     void setOpen(bool open);                                  // UI thread
@@ -50,6 +76,9 @@ private:
     UiInput ring_[kCap];
     std::atomic<uint32_t> head_{0}, tail_{0};
     std::atomic<bool> open_{false};
+    std::atomic<bool> releaseAll_{false};
+    std::atomic<uint32_t> pendingReleaseButtons_{0};
+    std::atomic<bool> pendingReleaseKeys_{false};
     double since_ = 0;                                        // (audio thread) frames since the last publish
     std::mutex m_;                                            // view_, screen_, seq_
     gb_view view_{};

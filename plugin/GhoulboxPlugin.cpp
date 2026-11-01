@@ -8,6 +8,7 @@
 #include "clock_gen.h"
 #include "engine.h"
 #include "global_params.h"
+#include "knob_math.h"
 #include "library.h"
 #include "midi_layer.h"
 #include "ui_bridge.h"
@@ -163,6 +164,7 @@ protected:
         uint32_t n;
         {
             std::lock_guard<std::mutex> g(coreMutex_);
+            const_cast<GhoulboxPlugin*>(this)->reconcileStaleParams();
             n = api().state_save(b.data(), (uint32_t)b.size());
         }
         return n ? String::asBase64(b.data(), n) : String();
@@ -177,8 +179,11 @@ protected:
         }
         std::vector<uint8_t> b = d_getChunkFromBase64String(value);
         std::lock_guard<std::mutex> g(coreMutex_);
-        if (!b.empty() && api().state_load(b.data(), (uint32_t)b.size()))
+        if (!b.empty() && api().state_load(b.data(), (uint32_t)b.size())) {
             api().clock_external(true);
+            midiLayer_.reset();
+            slotEnabledMask_ = layerMask();
+        }
     }
 
     void activate() override { sampleRateChanged(getSampleRate()); }
@@ -205,6 +210,23 @@ protected:
         clock_.block(hostTime(), frames, getSampleRate(), clockEvents_);
         mergeEvents(midi, nmidi);
         engine_->process(out[0], out[1], frames, events_.data(), (uint32_t)events_.size());
+        for (const auto& e : events_) {
+            if ((e.b[0] & 0xF0u) == 0xB0u) {
+                const uint32_t t = e.b[0] & 0x0Fu;
+                const uint8_t cc = e.b[1] & 0x7Fu;
+                const uint8_t val = e.b[2] & 0x7Fu;
+                if (t < 4) {
+                    for (uint32_t k = 0; k < kSlotCCParams; k++) {
+                        if (SLOT_CC_PARAMS[k].cc == cc) {
+                            const uint32_t id = kSlotFirst + t * kSlotParams + 1 + k;
+                            if (param_[id] >= 0 && (int)std::lround(param_[id]) != val)
+                                param_[id] = -1.f;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         if (bridge_->due(frames, getSampleRate())) {     // (a window is open: its view, ~60 times a second)
             api().view_read(&view_);
             bridge_->publish(view_, api().screen());
@@ -235,7 +257,18 @@ private:
                 const uint32_t t = rel / kSlotParams;
                 const uint32_t k = rel % kSlotParams;
                 if (k == 0) {
-                    // slot enabled: read in layerMask()
+                    const bool enabled = v > 0.5f;
+                    const bool wasEnabled = (slotEnabledMask_ >> t & 1u) != 0;
+                    if (wasEnabled && !enabled) {
+                        api().midi((uint8_t)(0xB0u | t), 120, 0); // All Sound Off
+                        api().midi((uint8_t)(0xB0u | t), 123, 0); // All Notes Off
+                        api().midi((uint8_t)(0xB0u | t), 64, 0);  // Sustain Off
+                        midiLayer_.resetSlot(t);
+                    }
+                    if (enabled)
+                        slotEnabledMask_ |= (1u << t);
+                    else
+                        slotEnabledMask_ &= ~(1u << t);
                 } else if (v >= 0) {
                     api().track_cc(t, SLOT_CC_PARAMS[k - 1].cc, (uint8_t)std::lround(v));
                 }
@@ -250,7 +283,32 @@ private:
         case UiInput::Enc: api().enc((uint32_t)in.a, in.b); break;
         case UiInput::Keys: api().keys((uint32_t)in.a); break;
         case UiInput::Track: api().track_select((uint32_t)in.a); break;
-        case UiInput::Sound: api().sound_load((uint32_t)in.a); break;
+        case UiInput::Sound:
+            api().sound_load((uint32_t)in.a);
+            for (uint32_t k = 0; k < 4; k++)
+                param_[kSlotFirst + (view_.sel % 4) * kSlotParams + 5 + k] = -1.f;
+            break;
+        }
+    }
+
+    void reconcileStaleParams()
+    {
+        api().view_read(&view_);
+        for (uint32_t g = 0; g < kGlobalCount; g++) {
+            const GlobalParam& gp = GLOBAL_PARAMS[g];
+            if (valueParamStale(param_[kGlobalFirst + g], view_.global[gp.gb].value))
+                param_[kGlobalFirst + g] = -1.f;
+        }
+        for (uint32_t t = 0; t < 4; t++) {
+            const gb_ctl& c = view_.track[t].level;
+            if (ccParamStale(param_[kSlotFirst + t * kSlotParams + 1], c.pos, c.max - c.min))
+                param_[kSlotFirst + t * kSlotParams + 1] = -1.f;
+        }
+        const uint32_t sel = view_.sel % 4;
+        for (uint32_t k = 0; k < 4; k++) {
+            const gb_ctl& c = view_.knob[k];
+            if (ccParamStale(param_[kSlotFirst + sel * kSlotParams + 5 + k], c.pos, c.max - c.min))
+                param_[kSlotFirst + sel * kSlotParams + 5 + k] = -1.f;
         }
     }
 
@@ -286,8 +344,8 @@ private:
                                                    e.size > 2 ? e.data[2] : (uint8_t)0}});
         }
         layered_.clear();
-        layerEvents(hostEvents_.data(), (uint32_t)hostEvents_.size(), layerMask(), api().midi_base(), layered_,
-                    MAX_EVENTS);
+        midiLayer_.layer(hostEvents_.data(), (uint32_t)hostEvents_.size(), layerMask(), api().midi_base(), layered_,
+                         MAX_EVENTS);
         events_.clear();
         size_t c = 0, m = 0;
         while (events_.size() < MAX_EVENTS && (m < layered_.size() || c < clockEvents_.size())) {
@@ -295,6 +353,24 @@ private:
                 events_.push_back(layered_[m++]);
             else
                 events_.push_back(clockEvents_[c++]);
+        }
+        for (; m < layered_.size(); m++) {
+            const MidiEv& e = layered_[m];
+            const uint8_t st = e.b[0] & 0xF0u;
+            bool isRel = (st == 0x80u) || (st == 0x90u && (e.b[2] & 0x7Fu) == 0) ||
+                         (st == 0xB0u && ((e.b[1] == 64 && e.b[2] < 64) || e.b[1] == 120 || e.b[1] == 123));
+            if (isRel) {
+                for (size_t i = events_.size(); i > 0; i--) {
+                    const MidiEv& prev = events_[i - 1];
+                    const uint8_t pst = prev.b[0] & 0xF0u;
+                    bool prevRel = (pst == 0x80u) || (pst == 0x90u && (prev.b[2] & 0x7Fu) == 0) ||
+                                   (pst == 0xB0u && ((prev.b[1] == 64 && prev.b[2] < 64) || prev.b[1] == 120 || prev.b[1] == 123));
+                    if (!prevRel) {
+                        events_[i - 1] = e;
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -347,6 +423,8 @@ private:
     String heldState_;                                  // the project's state, while there is no core to hold it
     mutable std::mutex coreMutex_;
     ClockGen clock_;
+    MidiLayer midiLayer_;
+    uint32_t slotEnabledMask_ = 1u;
     const bool beatsAreQuarters_ = std::strcmp(getPluginFormatName(), "CLAP") == 0;   // (DPF's CLAP BBT: quarters)
     std::vector<MidiEv> events_, clockEvents_, hostEvents_, layered_;
     std::atomic<float> param_[kParamCount];

@@ -397,6 +397,13 @@ struct MixedEvents {
         std::memcpy(e.m.data, b, 3);
         ev.push_back(e);
     }
+    void midiAt(uint32_t frame, const uint8_t* b)
+    {
+        E e{};
+        e.m.header = {sizeof e.m, frame, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI, 0};
+        std::memcpy(e.m.data, b, 3);
+        ev.push_back(e);
+    }
 };
 static clap_id paramId(const Inst& a, uint32_t index)
 {
@@ -428,6 +435,119 @@ static void test_layer_plays_any_channel()
     off.run(512, nullptr, &evOff.list);
     off.runFor(0.1);
     CHECK(off.runFor(0.2, NOTE16) < 1e-4f);           // all slots off: silent
+}
+
+/* Bug 1: Saved firmware edits must not be overwritten during restore */
+static void test_saved_firmware_edits_preserved_on_restore()
+{
+    Inst a;
+    CHECK(a.p);
+    // Set Slot 1 Knob 1 (param index 6: 1 + 0*9 + 5 = 6) through host parameter to 10
+    MixedEvents evParam;
+    evParam.param(paramId(a, 6), 10);
+    a.run(512, nullptr, &evParam.list);
+    a.runFor(0.1);
+
+    // Change Slot 1 Knob 1 through MIDI CC 21 to 100
+    const uint8_t cc21[3] = {0xB0, 21, 100};
+    a.runFor(0.1, cc21);
+
+    // Save with UI closed
+    std::string s = a.save();
+    CHECK(!project(s).empty());
+
+    // Reload into a fresh instance
+    Inst b;
+    CHECK(b.load(s));
+    b.runFor(0.1);
+
+    // Check that restored firmware state preserves the CC value (100) and was not overwritten by stale 10
+    std::string sRestored = b.save();
+    CHECK(project(sRestored) == project(s));
+}
+
+/* Bug 2: Disabling a slot must silence held notes and sustain without leaving stranded voices */
+static void test_disable_slot_silences_held_notes()
+{
+    Inst a;
+    CHECK(a.p);
+    const uint8_t noteOn[3] = {0x90, 60, 100};
+    const uint8_t noteOff[3] = {0x80, 60, 0};
+
+    // Hold note on Slot 1
+    a.run(512, noteOn);
+    CHECK(a.runFor(0.2) > 0.05f);
+
+    // Disable slot 1 (param index 1)
+    MixedEvents evDis;
+    evDis.param(paramId(a, 1), 0);
+    a.run(512, nullptr, &evDis.list);
+
+    // Send note-off after disabling
+    a.run(512, noteOff);
+
+    // Let the release decay for 3 seconds, then measure peak:
+    a.runFor(3.0);
+    CHECK(a.run(4096) < 0.005f);
+}
+
+/* Bug 3: Channel remapping retains overlapping-note ownership */
+static void test_overlapping_note_ownership_clap()
+{
+    Inst a;
+    CHECK(a.p);
+    const uint8_t onCh1[3] = {0x90, 60, 100};
+    const uint8_t onCh2[3] = {0x91, 60, 100};
+    const uint8_t offCh1[3] = {0x80, 60, 0};
+    const uint8_t offCh2[3] = {0x81, 60, 0};
+
+    // Hold C4 on channel 1 and channel 2
+    a.run(512, onCh1);
+    a.run(512, onCh2);
+    CHECK(a.runFor(0.1) > 0.05f);
+
+    // Release only channel 1: channel 2 is still held, so sound must continue
+    a.run(512, offCh1);
+    CHECK(a.runFor(0.2) > 0.01f);
+
+    // Release channel 2: now all owners released, sound should decay to silent
+    a.run(512, offCh2);
+    a.runFor(3.0);
+    CHECK(a.run(4096) < 0.005f);
+}
+
+/* Bug 4: Event truncation must guarantee note-off delivery */
+static void test_truncation_preserves_note_off()
+{
+    Inst a;
+    CHECK(a.p);
+    // Enable all 4 slots (params 1, 10, 19, 28)
+    MixedEvents evEn;
+    evEn.param(paramId(a, 1), 1);
+    evEn.param(paramId(a, 10), 1);
+    evEn.param(paramId(a, 19), 1);
+    evEn.param(paramId(a, 28), 1);
+    a.run(512, nullptr, &evEn.list);
+
+    // Play a note
+    const uint8_t noteOn[3] = {0x90, 60, 100};
+    a.run(512, noteOn);
+    CHECK(a.runFor(0.2) > 0.05f);
+
+    // Send 256 spaced CC events followed by Note Off in one 4096-frame block
+    MixedEvents evDense;
+    for (uint32_t i = 0; i < 256; i++) {
+        uint8_t cc[3] = {0xB0, 21, (uint8_t)(i & 127)};
+        evDense.midiAt(i * 15, cc);
+    }
+    const uint8_t noteOff[3] = {0x80, 60, 0};
+    evDense.midiAt(4000, noteOff);
+
+    a.run(4096, nullptr, &evDense.list);
+
+    // Let the release decay, then measure peak:
+    a.runFor(4.0);
+    CHECK(a.run(4096) < 0.005f);
 }
 
 static int coreTemps()
@@ -478,6 +598,10 @@ int main()
         {"test_global_param_changes_state", test_global_param_changes_state},
         {"test_gui_extension", test_gui_extension},
         {"test_layer_plays_any_channel", test_layer_plays_any_channel},
+        {"test_saved_firmware_edits_preserved_on_restore", test_saved_firmware_edits_preserved_on_restore},
+        {"test_disable_slot_silences_held_notes", test_disable_slot_silences_held_notes},
+        {"test_overlapping_note_ownership_clap", test_overlapping_note_ownership_clap},
+        {"test_truncation_preserves_note_off", test_truncation_preserves_note_off},
     };
     for (auto& x : t) {
         int f = fails;

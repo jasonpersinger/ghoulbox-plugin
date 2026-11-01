@@ -100,6 +100,52 @@ static void test_due()
     CHECK(br->due(512, 48000));                       // not published: still due
 }
 
+static void test_full_queue_key_release()
+{
+    auto br = std::make_unique<UiBridge>();
+    CHECK(br->push(UiInput{UiInput::Keys, 1, 0}));
+    for (int i = 0; i < 255; i++)
+        CHECK(br->push(UiInput{UiInput::Enc, GB_ENC_K1, 1}));
+    // Queue is now full (256 items). Push key release:
+    CHECK(br->push(UiInput{UiInput::Keys, 0, 0}));
+
+    uint32_t keys = 999;
+    br->drain([&](const UiInput& in) {
+        if (in.kind == UiInput::Keys)
+            keys = (uint32_t)in.a;
+    });
+    CHECK(keys == 0);
+}
+
+static void test_full_queue_release_all()
+{
+    auto br = std::make_unique<UiBridge>();
+    CHECK(br->push(UiInput{UiInput::Button, GB_BTN_EDIT, 1}));
+    CHECK(br->push(UiInput{UiInput::Keys, 1, 0}));
+    for (int i = 0; i < 254; i++)
+        CHECK(br->push(UiInput{UiInput::Enc, GB_ENC_K1, 1}));
+    // Queue full (256 items). Close UI / release-all:
+    br->requestReleaseAll();
+
+    uint32_t keys = 999;
+    int btnEdit = -1;
+    br->drain([&](const UiInput& in) {
+        if (in.kind == UiInput::Keys)
+            keys = (uint32_t)in.a;
+        else if (in.kind == UiInput::Button && in.a == GB_BTN_EDIT)
+            btnEdit = in.b;
+    });
+    // In case the button release was split across blocks due to press in same drain:
+    if (btnEdit != 0) {
+        br->drain([&](const UiInput& in) {
+            if (in.kind == UiInput::Button && in.a == GB_BTN_EDIT)
+                btnEdit = in.b;
+        });
+    }
+    CHECK(keys == 0);
+    CHECK(btnEdit == 0);
+}
+
 int main()
 {
     struct { const char* name; void (*fn)(); } t[] = {
@@ -108,6 +154,8 @@ int main()
         {"test_publish_not_torn", test_publish_not_torn},
         {"test_read_before_publish", test_read_before_publish},
         {"test_due", test_due},
+        {"test_full_queue_key_release", test_full_queue_key_release},
+        {"test_full_queue_release_all", test_full_queue_release_all},
     };
     for (auto& x : t) {
         int f = fails;

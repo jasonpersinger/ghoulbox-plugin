@@ -47,6 +47,100 @@ static void test_layer_cap()
     CHECK(out.size() == 1024);
 }
 
+static void test_overlapping_note_ownership()
+{
+    MidiLayer layer;
+    std::vector<MidiEv> out;
+    const MidiEv onCh0{0, {0x90, 60, 100}};
+    const MidiEv onCh1{1, {0x91, 60, 100}};
+    const MidiEv offCh0{2, {0x80, 60, 0}};
+    const MidiEv offCh1{3, {0x81, 60, 0}};
+
+    // Slot 1 only (mask = 1)
+    layer.layer(&onCh0, 1, 1, 0, out, 1024);
+    CHECK(out.size() == 1 && out[0].b[0] == 0x90 && out[0].b[1] == 60);
+
+    out.clear();
+    layer.layer(&onCh1, 1, 1, 0, out, 1024);
+    CHECK(out.size() == 1 && out[0].b[0] == 0x90 && out[0].b[1] == 60);
+
+    // Release ch 0: note C4 should NOT be released because ch 1 is still holding it!
+    out.clear();
+    layer.layer(&offCh0, 1, 1, 0, out, 1024);
+    CHECK(out.empty());
+
+    // Release ch 1: note C4 should now be released
+    out.clear();
+    layer.layer(&offCh1, 1, 1, 0, out, 1024);
+    CHECK(out.size() == 1 && out[0].b[0] == 0x80 && out[0].b[1] == 60);
+}
+
+static void test_overlapping_sustain_ownership()
+{
+    MidiLayer layer;
+    std::vector<MidiEv> out;
+    const MidiEv susOnCh0{0, {0xB0, 64, 127}};
+    const MidiEv susOnCh1{1, {0xB1, 64, 127}};
+    const MidiEv susOffCh0{2, {0xB0, 64, 0}};
+    const MidiEv susOffCh1{3, {0xB1, 64, 0}};
+
+    // Sustain pressed on ch 0: emitted
+    layer.layer(&susOnCh0, 1, 1, 0, out, 1024);
+    CHECK(out.size() == 1 && out[0].b[0] == 0xB0 && out[0].b[1] == 64 && out[0].b[2] == 127);
+
+    // Sustain pressed on ch 1: already active on slot 1, ownership tracked
+    out.clear();
+    layer.layer(&susOnCh1, 1, 1, 0, out, 1024);
+    CHECK(out.empty());
+
+    // Release sustain on ch 0: still held by ch 1, NOT emitted
+    out.clear();
+    layer.layer(&susOffCh0, 1, 1, 0, out, 1024);
+    CHECK(out.empty());
+
+    // Release sustain on ch 1: all owners released, emitted
+    out.clear();
+    layer.layer(&susOffCh1, 1, 1, 0, out, 1024);
+    CHECK(out.size() == 1 && out[0].b[0] == 0xB0 && out[0].b[1] == 64 && out[0].b[2] == 0);
+}
+
+static void test_release_priority_truncation()
+{
+    MidiLayer layer;
+    std::vector<MidiEv> in;
+    in.reserve(257);
+    for (uint32_t i = 0; i < 256; i++)
+        in.push_back(MidiEv{i, {0xB0, 21, (uint8_t)(i & 127)}});
+    // At the end of block, note off:
+    in.push_back(MidiEv{256, {0x80, 60, 0}});
+
+    std::vector<MidiEv> out;
+    // With 4 slots enabled, 256 CCs produce 1024 events (capacity).
+    // The note-off MUST be preserved and delivered for all 4 slots.
+    layer.layer(in.data(), (uint32_t)in.size(), 0xF, 0, out, 1024);
+    CHECK(out.size() == 1024);
+
+    int noteOffCount = 0;
+    for (const auto& e : out) {
+        if ((e.b[0] & 0xF0) == 0x80 && e.b[1] == 60)
+            noteOffCount++;
+    }
+    CHECK(noteOffCount == 4);
+}
+
+static void test_slot_reset()
+{
+    MidiLayer layer;
+    std::vector<MidiEv> out;
+    const MidiEv on{0, {0x90, 60, 100}};
+    layer.layer(&on, 1, 1, 0, out, 1024);
+    CHECK(layer.noteOwners[0][60] == 1);
+
+    layer.resetSlot(0);
+    CHECK(layer.noteOwners[0][60] == 0);
+    CHECK(layer.sustainOwners[0] == 0);
+}
+
 int main()
 {
     struct { const char* name; void (*fn)(); } t[] = {
@@ -55,6 +149,10 @@ int main()
         {"test_layer_off_silent", test_layer_off_silent},
         {"test_layer_leaves_clock", test_layer_leaves_clock},
         {"test_layer_cap", test_layer_cap},
+        {"test_overlapping_note_ownership", test_overlapping_note_ownership},
+        {"test_overlapping_sustain_ownership", test_overlapping_sustain_ownership},
+        {"test_release_priority_truncation", test_release_priority_truncation},
+        {"test_slot_reset", test_slot_reset},
     };
     for (auto& x : t) {
         int f = fails;

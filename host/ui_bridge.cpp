@@ -5,14 +5,33 @@
 bool UiBridge::push(const UiInput& in)
 {
     const uint32_t h = head_.load(std::memory_order_relaxed);
-    if (h - tail_.load(std::memory_order_acquire) >= kCap)
+    if (h - tail_.load(std::memory_order_acquire) >= kCap) {
+        if (in.kind == UiInput::Button && in.b == 0) {
+            pendingReleaseButtons_.fetch_or(1u << (in.a & 31), std::memory_order_release);
+            return true;
+        }
+        if (in.kind == UiInput::Keys && in.a == 0) {
+            pendingReleaseKeys_.store(true, std::memory_order_release);
+            return true;
+        }
         return false;
+    }
     ring_[h % kCap] = in;
     head_.store(h + 1, std::memory_order_release);
     return true;
 }
 
-void UiBridge::setOpen(bool open) { open_.store(open, std::memory_order_relaxed); }
+void UiBridge::requestReleaseAll()
+{
+    releaseAll_.store(true, std::memory_order_release);
+}
+
+void UiBridge::setOpen(bool open)
+{
+    open_.store(open, std::memory_order_relaxed);
+    if (!open)
+        requestReleaseAll();
+}
 
 bool UiBridge::due(uint32_t frames, double rate)
 {
